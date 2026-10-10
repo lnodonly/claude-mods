@@ -1,6 +1,8 @@
 import { describe, expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
+import { blocksFor } from '../hooks/register'
+
 const E = '\x1b'
 
 const run = (args: string) => ({
@@ -10,8 +12,13 @@ const run = (args: string) => ({
   presentation: { isFullscreen: false, columns: 100 },
 })
 
+// modbar isn't loaded in a test: its noun, as modbar provides it.
+const stubModbar = (on: On) =>
+  on('engine.create', async ($, e, next) => ({ ...(await next(e)), modbar: { blocks: async () => [], press: async () => false } }) as never)
+
 // Stands in beneath the plugin for core's Bash and the session's messages.
 function setup(on: On, bash: Record<string, unknown> | { error: string }, messages: unknown[] = [], opts: { storeThrows?: boolean } = {}) {
+  stubModbar(on)
   if (opts.storeThrows) on('store.get', () => { throw new Error('store unavailable') })
   else mock.store(on)
   on('tool.call', { tool: 'Bash' }, () => {
@@ -67,6 +74,7 @@ describe('Bash cleanup', () => {
   })
 
   test('other tools are untouched', async ($, on) => {
+    stubModbar(on)
     mock.store(on)
     on('tool.call', { tool: 'Read' }, () => ({ result: { type: 'text', file: { filePath: '/a', content: 'x\nx\nx' } } }) as never)
     const r = await $.tool.call({ tool: 'Read', file_path: '/a' } as never)
@@ -84,5 +92,21 @@ describe('/context-diet', () => {
     expect(out.text).toContain('24.1k  Read config.xml')
     expect(out.text).toContain('(on)')
     expect(out.text.split('\n').filter(l => /^\s+\S+k?\s{2}/.test(l))).toEqual(['   24.1k  Read config.xml'])
+  })
+})
+
+// A test can't call $.modbar, so the block is checked through blocksFor,
+// which the modbar.blocks hook wraps.
+describe('modbar block', () => {
+  test('tokens saved, shown; the top three items, offered off', () => {
+    const items = [{ label: 'Read a.ts', tokens: 12_345 }, { label: 'Bash make', tokens: 3_000 }, { label: 'Grep x', tokens: 900 }, { label: 'Read b', tokens: 100 }]
+    expect(blocksFor({ items, saved: 1_500 })).toEqual([
+      { id: 'context-diet.saved', owner: 'context-diet', order: 12, width: 'fit', about: 'tokens saved by Bash output cleanup', lines: [{ pieces: [{ text: 'context-diet saved 1.5k', dim: true }] }] },
+      { id: 'context-diet.top', owner: 'context-diet', order: 14, width: 'full', off: true, about: 'biggest items in context', lines: [{ pieces: [{ text: 'Top: Read a.ts 12.3k · Bash make 3.0k · Grep x 900', dim: true }] }] },
+    ])
+  })
+
+  test('before the first reply both are still offered, so /modbar can list them', () => {
+    expect(blocksFor({ items: [], saved: 0 }).map(b => (b.lines[0]!.pieces[0] as { text: string }).text)).toEqual(['context-diet saved 0', 'Top: measured after the first reply'])
   })
 })

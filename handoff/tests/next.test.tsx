@@ -50,7 +50,7 @@ describe('blocks', () => {
   })
 
   test('after work: the Write handoff note button, fit and right-aligned; while writing it says so', () => {
-    expect(blocksFor(state({ worked: true }))).toEqual([{ id: 'handoff.write', owner: 'handoff', order: 12, width: 'fit', align: 'right', lines: [{ pieces: [{ button: { key: 'handoff-write', label: 'Write handoff note' } }] }] }])
+    expect(blocksFor(state({ worked: true }))).toEqual([{ id: 'handoff.write', owner: 'handoff', order: 13, width: 'fit', align: 'right', lines: [{ pieces: [{ button: { key: 'handoff-write', label: 'Write handoff note' } }] }] }])
     expect(blocksFor(state({ worked: true, writing: true }))[0]!.lines[0]!.pieces).toEqual([{ button: { key: 'handoff-write', label: 'Writing handoff note…' } }])
     expect(blocksFor(state({ worked: true, interactive: false }))).toEqual([])
   })

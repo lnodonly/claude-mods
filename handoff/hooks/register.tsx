@@ -237,7 +237,7 @@ const USAGE = 'Usage: /handoff [show|clear|auto [on|off]]'
 // gets it as context, and a checklist above the prompt was noise (the user, 2026-10-08).
 export function blocksFor(s: { worked: boolean; writing: boolean; interactive: boolean }) {
   if (!s.worked || !s.interactive) return []
-  return [{ id: 'handoff.write', owner: 'handoff', order: 12, width: 'fit', align: 'right', lines: [{ pieces: [{ button: { key: 'handoff-write', label: s.writing ? 'Writing handoff note…' : 'Write handoff note' } }] }] }]
+  return [{ id: 'handoff.write', owner: 'handoff', order: 13, width: 'fit', align: 'right', lines: [{ pieces: [{ button: { key: 'handoff-write', label: s.writing ? 'Writing handoff note…' : 'Write handoff note' } }] }] }]
 }
 
 export const register: Register = on => {

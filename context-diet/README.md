@@ -13,7 +13,7 @@ The cleanup is lossless: it never summarizes or drops content. An error result o
 - `/context-diet`: lists the ten biggest items in context (estimated tokens) and the tokens saved this session.
 - `/context-diet off` and `/context-diet on`: pause or resume the cleanup. The setting lasts across sessions.
 
-With [context-bar](../context-bar/) loaded, the top three items and the tokens saved also show above the prompt.
+Requires [modbar](../modbar/), which shows the tokens saved above the prompt (`context-diet.saved`). A row with the top three items (`context-diet.top`) is off until you run `/modbar add context-diet.top`. `/modbar` lists it under what can be added. `/modbar remove <id>` turns either one off.
 
 ## Limits
 

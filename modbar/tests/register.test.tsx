@@ -21,6 +21,7 @@ const run = (command: string, args = '') => ({ command, args, origin: { kind: 'c
 const USAGE: ModbarBlock = { id: 'context-bar.usage', owner: 'context-bar', order: 10, width: 'full', lines: [{ pieces: [{ bar: [{ value: 5, color: 'promptBorder' }, { value: 95, empty: true, dim: true }] }, { text: ' 5% · 45.6k/1000k' }] }] }
 const LEGEND: ModbarBlock = { id: 'context-bar.legend', owner: 'context-bar', order: 11, width: 'fill', lines: [{ pieces: [{ text: '■', color: 'promptBorder' }, { text: ' System prompt 2.5k', dim: true }] }] }
 const WRITE: ModbarBlock = { id: 'handoff.write', owner: 'handoff', order: 12, width: 'fit', align: 'right', lines: [{ pieces: [{ button: { key: 'handoff-write', label: 'Write handoff note' } }] }] }
+const TOP: ModbarBlock = { id: 'example.top', owner: 'example', order: 13, width: 'full', off: true, about: 'biggest items', lines: [{ pieces: [{ text: 'Top: a 3k' }] }] }
 const OPEN: ModbarBlock = { id: 'example.x', owner: 'example', order: 50, width: 'full', lines: [{ pieces: [{ button: { key: 'ex-open', label: 'Open' } }] }] }
 
 function setup(on: On, opts: { blocks?: unknown; files?: Record<string, string>; pressed?: () => Promise<void> } = {}) {
@@ -189,13 +190,53 @@ describe('presses', () => {
 })
 
 describe('/modbar', () => {
-  test('lists blocks offered now and configured ones', async ($, on) => {
-    setup(on, { files: { [FILE]: '{"blocks":{"example.nudge":{"hidden":true}}}' } })
+  test('lists what is shown, what can be added and what is configured but not offered', async ($, on) => {
+    setup(on, { blocks: [USAGE, LEGEND, WRITE, TOP], files: { [FILE]: '{"blocks":{"example.nudge":{"hidden":true},"context-bar.legend":{"hidden":true}}}' } })
     await start($)
-    const text = (await $.command.run(run('modbar'))).text
-    expect(text).toContain('context-bar.usage · context-bar · full · left · 10 · shown')
-    expect(text).toContain('handoff.write · handoff · fit · right · 12 · shown')
-    expect(text).toContain('example.nudge · hidden · not offered now')
+    expect((await $.command.run(run('modbar'))).text).toBe([
+      'Shown:',
+      '  context-bar.usage · context-bar · full · left · 10',
+      '  handoff.write · handoff · fit · right · 12',
+      'Can be added (/modbar add <id>):',
+      '  context-bar.legend · context-bar · hidden',
+      '  example.top · example · biggest items · off by default',
+      'Not offered now:',
+      '  example.nudge · hidden',
+    ].join('\n'))
+  })
+
+  test('a block offered off is not drawn until /modbar show, and hide puts it back', async ($, on) => {
+    const { files } = setup(on, { blocks: [WRITE, TOP] })
+    await start($)
+    let ui = await mount($)
+    expect(await ui.find({ type: 'Text', text: 'Top: a 3k' })).toBeUndefined()
+    await ui.unmount()
+    expect((await $.command.run(run('modbar', 'show example'))).text).toBe('example: shown (example.top).')
+    expect(JSON.parse(files[FILE]!).blocks).toEqual({ 'example.top': { hidden: false } })
+    ui = await mount($)
+    expect(await ui.find({ type: 'Text', text: 'Top: a 3k' })).toBeDefined()
+    await ui.unmount()
+    expect((await $.command.run(run('modbar'))).text).toContain('  example.top · example · full · left · 13')
+    expect((await $.command.run(run('modbar', 'hide example.top'))).text).toBe('example.top: hidden.')
+    ui = await mount($)
+    expect(await ui.find({ type: 'Text', text: 'Top: a 3k' })).toBeUndefined()
+    await ui.unmount()
+  })
+
+  test('list, add and remove do what /modbar, show and hide do', async ($, on) => {
+    const { files } = setup(on, { blocks: [WRITE, TOP] })
+    await start($)
+    expect((await $.command.run(run('modbar', 'list'))).text).toBe((await $.command.run(run('modbar'))).text)
+    expect((await $.command.run(run('modbar', 'add example.top'))).text).toBe('example.top: shown.')
+    expect(JSON.parse(files[FILE]!).blocks).toEqual({ 'example.top': { hidden: false } })
+    expect((await $.command.run(run('modbar', 'remove example'))).text).toBe('example: hidden (example.top).')
+    expect(JSON.parse(files[FILE]!).blocks).toEqual({ 'example.top': { hidden: true } })
+  })
+
+  test('a block whose off or about is the wrong type is dropped', async ($, on) => {
+    setup(on, { blocks: [{ ...TOP, off: 'yes' }, { ...OPEN, about: 5 }, WRITE] })
+    await start($)
+    expect((await $.command.run(run('modbar'))).text).toBe('Shown:\n  handoff.write · handoff · fit · right · 12')
   })
 
   test('edits write the file and apply at once', async ($, on) => {
@@ -208,7 +249,7 @@ describe('/modbar', () => {
     expect(await ui.find({ type: 'Text', text: ' System prompt 2.5k' })).toBeUndefined()
     await ui.unmount()
     expect((await $.command.run(run('modbar', 'order handoff.write 1'))).text).toBe('handoff.write: position 1.')
-    expect((await $.command.run(run('modbar', 'width handoff.write wide'))).text).toBe('Usage: /modbar [reload | reset confirm | hide|show <id or mod> | width <id> full|half|third|fit|fill | align <id> left|right | order <id> <n>]')
+    expect((await $.command.run(run('modbar', 'width handoff.write wide'))).text).toBe('Usage: /modbar [list | reload | reset confirm | add|show <id or mod> | remove|hide <id or mod> | width <id> full|half|third|fit|fill | align <id> left|right | order <id> <n>]')
     expect((await $.command.run(run('modbar', 'reset'))).text).toBe('Type /modbar reset confirm to clear all modbar settings.')
     expect((await $.command.run(run('modbar', 'reset confirm'))).text).toBe('Cleared the modbar settings.')
     expect(JSON.parse(files[FILE]!)).toEqual({ order: [], blocks: {} })

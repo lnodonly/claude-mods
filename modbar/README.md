@@ -4,8 +4,8 @@ Draws the area above the prompt for other mods. Each mod hands modbar blocks (te
 
 ## Commands
 
-- `/modbar`: lists the blocks with their ids, owners, widths and order.
-- `/modbar hide <id>` and `/modbar show <id>`: hide or show a block. A mod's name (e.g. `context-bar`) stands for all its blocks.
+- `/modbar` (or `/modbar list`): lists the blocks shown, with their ids, owners, widths and order, then the blocks you can add: those a mod offers off by default and those you've hidden.
+- `/modbar add <id>` and `/modbar remove <id>` (or `show` and `hide`): show or hide a block. A mod's name (e.g. `context-bar`) stands for all its blocks.
 - `/modbar width <id> full|half|third|fit|fill`: how much of a row a block takes. `full` gives it its own row; `half` and `third` share a row; `fit` takes what its content needs; `fill` takes what the others leave.
 - `/modbar align <id> left|right` and `/modbar order <id> <n>`: placement within a row, and the order of blocks.
 - `/modbar reload`: re-read the settings file.
@@ -17,4 +17,6 @@ The commands above write `~/.claude/modbar.json`. You don't need to edit it by h
 
 ## For mod authors
 
-A mod declares `"dependencies": ["modbar"]` and answers modbar's hook with its blocks. `types/index.d.ts` describes the contract.
+A mod declares `"dependencies": ["modbar"]` and answers modbar's hook with its blocks. A block with `off: true` isn't drawn until the user runs `/modbar show <id>`, and its `about` text describes it in `/modbar`'s list. `types/index.d.ts` describes the contract.
+
+A mod that hooks modbar doesn't load without it, so declare the dependency and tell your users to install modbar.

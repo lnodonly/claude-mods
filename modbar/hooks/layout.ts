@@ -54,10 +54,13 @@ export function editConfig(c: Config, change: Change): Config {
 
 const LAST = Number.MAX_SAFE_INTEGER
 
+// The user's hide or show wins; with neither, a block the mod offers as off stays hidden.
+export const isHidden = (b: ModbarBlock, c: Config) => c.blocks[b.id]?.hidden ?? b.off === true
+
 export function arrange(blocks: ModbarBlock[], c: Config): ModbarBlock[] {
   const pos = (id: string) => (c.order.includes(id) ? c.order.indexOf(id) : LAST)
   return blocks
-    .filter(b => c.blocks[b.id]?.hidden !== true)
+    .filter(b => !isHidden(b, c))
     .map(b => {
       const s = c.blocks[b.id] ?? {}
       return { ...b, ...(s.width ? { width: s.width } : {}), ...(s.align ? { align: s.align } : {}) }

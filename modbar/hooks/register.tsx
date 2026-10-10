@@ -2,13 +2,13 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { ModbarBlock, ModbarConfig, ModbarLine, ModbarPiece, ModbarWidth } from '../types'
-import { arrange, barCells, EMPTY_CONFIG, editConfig, FILL_GAP, pack, parseConfig, pieceWidth, type Change } from './layout'
+import { arrange, barCells, EMPTY_CONFIG, editConfig, FILL_GAP, isHidden, pack, parseConfig, pieceWidth, type Change } from './layout'
 
 export const config = atom({ plugin: 'modbar', key: 'config' } as const, EMPTY_CONFIG as ModbarConfig)
 export const problem = atom({ plugin: 'modbar', key: 'problem' } as const, null as string | null)
 
 const SHOWN = '~/.claude/modbar.json'
-const USAGE = 'Usage: /modbar [reload | reset confirm | hide|show <id or mod> | width <id> full|half|third|fit|fill | align <id> left|right | order <id> <n>]'
+const USAGE = 'Usage: /modbar [list | reload | reset confirm | add|show <id or mod> | remove|hide <id or mod> | width <id> full|half|third|fit|fill | align <id> left|right | order <id> <n>]'
 const WIDTHS = ['full', 'half', 'third', 'fit', 'fill']
 export const theme = atom({ plugin: 'modbar', key: 'theme' } as const, null as string | null)
 
@@ -54,6 +54,7 @@ const isBlock = (b: unknown): b is ModbarBlock => {
   const x = b as ModbarBlock | null
   return x !== null && typeof x === 'object' && typeof x.id === 'string' && typeof x.owner === 'string' && typeof x.order === 'number'
     && WIDTHS.includes(x.width) && Array.isArray(x.lines)
+    && (x.off === undefined || typeof x.off === 'boolean') && (x.about === undefined || typeof x.about === 'string')
     && x.lines.every(l => l !== null && typeof l === 'object' && Array.isArray(l.pieces) && l.pieces.every(isPiece))
 }
 
@@ -87,7 +88,7 @@ export const register: Register = on => {
   })
 
   on('session.start', async ($, e, next) => {
-    await $.command.register({ name: 'modbar', description: 'Arrange the area above the prompt: /modbar lists blocks; hide|show|width|align|order <id> …' })
+    await $.command.register({ name: 'modbar', description: 'Arrange the area above the prompt: /modbar lists blocks shown and ones you can add; add|remove|width|align|order <id> …' })
     const msg = await load($).catch(() => null)
     if (msg) $.ui.toast(msg)
     await readTheme($).catch(() => {})
@@ -173,7 +174,9 @@ export const register: Register = on => {
   })
 
   on('command.run', { command: 'modbar' }, async ($, e) => {
-    const [verb = '', id = '', value = ''] = e.args.trim().split(/\s+/)
+    const [said = '', id = '', value = ''] = e.args.trim().split(/\s+/)
+    // Other words people reach for: list, add and remove.
+    const verb = ({ list: '', add: 'show', remove: 'hide' } as Record<string, string>)[said] ?? said
     const c = await read($, config)
     const apply = async (change: Change, said: string) => {
       await save($, editConfig(c, change))
@@ -181,9 +184,16 @@ export const register: Register = on => {
     }
     if (verb === '') {
       const blocks = await offered($, 100).catch(() => [])
-      const shown = arrange(blocks, { ...c, blocks: Object.fromEntries(Object.entries(c.blocks).map(([k, v]) => [k, { ...v, hidden: false }])) })
-      const lines = shown.map(b => `${b.id} · ${b.owner} · ${b.width} · ${b.align ?? 'left'} · ${b.order} · ${c.blocks[b.id]?.hidden ? 'hidden' : 'shown'}`)
-      for (const [k, v] of Object.entries(c.blocks)) if (!blocks.some(b => b.id === k)) lines.push(`${k} · ${v.hidden ? 'hidden' : 'configured'} · not offered now`)
+      // Every block in its place, hidden or not; then split into what's drawn and what can be added.
+      const all = arrange(blocks, { ...c, blocks: Object.fromEntries(blocks.map(b => [b.id, { ...c.blocks[b.id], hidden: false }])) })
+      const kept = new Map(blocks.map(b => [b.id, b]))
+      const shown = all.filter(b => !isHidden(kept.get(b.id)!, c))
+        .map(b => `  ${b.id} · ${b.owner} · ${b.width} · ${b.align ?? 'left'} · ${b.order}`)
+      const addable = all.filter(b => isHidden(kept.get(b.id)!, c))
+        .map(b => `  ${b.id} · ${b.owner}${b.about ? ` · ${b.about}` : ''} · ${c.blocks[b.id]?.hidden ? 'hidden' : 'off by default'}`)
+      const absent = Object.entries(c.blocks).filter(([k]) => !kept.has(k)).map(([k, v]) => `  ${k} · ${v.hidden ? 'hidden' : 'configured'}`)
+      const group = (title: string, ls: string[]) => (ls.length ? [title, ...ls] : [])
+      const lines = [...group('Shown:', shown), ...group('Can be added (/modbar add <id>):', addable), ...group('Not offered now:', absent)]
       const p = await read($, problem)
       return { text: [...(p ? [p] : []), ...(lines.length ? lines : ['No blocks right now.'])].join('\n') }
     }

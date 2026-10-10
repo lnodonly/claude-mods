@@ -6,7 +6,9 @@ export type ModbarButton = { button: { key: string; label: string; primary?: boo
 export type ModbarBar = { bar: { value: number; color?: string; dim?: boolean; empty?: boolean }[] }
 export type ModbarPiece = ModbarText | ModbarButton | ModbarBar
 export type ModbarLine = { pieces: ModbarPiece[]; align?: ModbarAlign }
-export type ModbarBlock = { id: string; owner: string; order: number; width: ModbarWidth; align?: ModbarAlign; lines: ModbarLine[] }
+// off: not drawn until the user runs /modbar show <id>; /modbar lists it under what can be added.
+// about: a few words on what the block shows, for that list.
+export type ModbarBlock = { id: string; owner: string; order: number; width: ModbarWidth; align?: ModbarAlign; off?: boolean; about?: string; lines: ModbarLine[] }
 export type ModbarBlocksArgs = { columns: number }
 export type ModbarPressArgs = { owner: string; key: string }
 export type Modbar = {

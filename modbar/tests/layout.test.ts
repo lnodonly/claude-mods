@@ -37,6 +37,13 @@ describe('arrange', () => {
     expect(out.map(b => b.id)).toEqual(['z.three', 'y.two', 'x.one'])
     expect(out[1]).toMatchObject({ width: 'half', align: 'right' })
   })
+
+  test('a block offered off stays out until the user shows it; the user\'s hide wins over on', () => {
+    const off = { ...block('d.top', 'full', 1), off: true }
+    expect(arrange([off], EMPTY_CONFIG)).toEqual([])
+    expect(arrange([off], { order: [], blocks: { 'd.top': { hidden: false } } }).map(b => b.id)).toEqual(['d.top'])
+    expect(arrange([block('d.on', 'full', 1)], { order: [], blocks: { 'd.on': { hidden: true } } })).toEqual([])
+  })
 })
 
 describe('pack', () => {

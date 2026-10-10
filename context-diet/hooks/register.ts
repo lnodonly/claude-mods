@@ -20,6 +20,24 @@ async function inspect($: EngineInterface) {
 
 type BashRecord = { stdout?: unknown; stderr?: unknown; isImage?: unknown }
 
+// A hook on a mod's noun gets and answers { value } (modbar's calls).
+const valueOf = (r: unknown): unknown[] => (Array.isArray(r) ? r : ((r as { value?: unknown[] } | null)?.value ?? []))
+const answer = (v: unknown) => ({ value: v }) as never
+
+const TOP = 3
+const k = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 100_000 ? 0 : 1)}k` : `${n}`)
+
+// What modbar draws: the tokens the cleanup saved, and a row of the biggest items. The row is
+// offered off, so it shows only after /modbar add context-diet.top; /modbar lists it until then.
+export function blocksFor(s: Summary) {
+  const top = s.items.slice(0, TOP)
+  const items = top.length > 0 ? top.map(i => `${i.label} ${k(i.tokens)}`).join(' · ') : 'measured after the first reply'
+  return [
+    { id: 'context-diet.saved', owner: 'context-diet', order: 12, width: 'fit', about: 'tokens saved by Bash output cleanup', lines: [{ pieces: [{ text: `context-diet saved ${k(s.saved)}`, dim: true }] }] },
+    { id: 'context-diet.top', owner: 'context-diet', order: 14, width: 'full', off: true, about: 'biggest items in context', lines: [{ pieces: [{ text: `Top: ${items}`, dim: true }] }] },
+  ]
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
@@ -61,6 +79,11 @@ export const register: Register = on => {
     } catch {
       return ran
     }
+  })
+
+  on('modbar.blocks', async ($, e, next) => {
+    const below = valueOf(await next(e))
+    return answer([...below, ...blocksFor(await read($, summary))])
   })
 
   on('command.run', { command: 'context-diet' }, async ($, e) => {
