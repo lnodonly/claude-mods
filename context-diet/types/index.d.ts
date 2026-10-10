@@ -3,6 +3,6 @@ export type Summary = { items: Item[]; saved: number }
 
 declare module 'claude-code' {
   interface PluginState {
-    'context-diet': { summary: Summary }
+    'context-diet': { summary: Summary; background: string[] }
   }
 }

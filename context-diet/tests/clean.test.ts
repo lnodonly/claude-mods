@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { clean, renderLine, stripEscapes } from '../hooks/clean'
+import { clean, cleanLines, printsMarker, renderLine, stripEscapes } from '../hooks/clean'
 
 const E = '\x1b'
 
@@ -84,6 +84,34 @@ describe('renderLine', () => {
     expect(renderLine(`foo${E}_Gf=100,a=T;AAAA${E}\\\rbar`)).toBe('foo\rbar')
     expect(renderLine(`foo${E}Pq#0~~${E}\\\r${E}[2Kbar`)).toBe('foo\rbar')
   })
+  test('an erase-line erases where it stands, not only at the start of its frame', () => {
+    expect(renderLine(`abc${E}[2K`)).toBe('')
+    expect(renderLine(`abc${E}[2Kdef`)).toBe('   def')
+    expect(renderLine(`frame one is long${E}[2K\rframe 2`)).toBe('frame 2')
+    expect(renderLine(`Hello World\r${E}[6C${E}[K`)).toBe('Hello ')
+    expect(renderLine(`abcdef${E}[3D${E}[1Kxy`)).toBe('   xyf')
+  })
+  test('cursor-forward over an earlier frame keeps its text', () => {
+    expect(renderLine(`Hello World\r${E}[6CThere`)).toBe('Hello There')
+  })
+  test('column moves within a line are replayed', () => {
+    expect(renderLine(`Downloading${E}[1GDone`)).toBe('Doneloading')
+    expect(renderLine(`Downloading 10%${E}[1G${E}[KDone`)).toBe('Done')
+    expect(renderLine(`50%${E}[3D100%`)).toBe('100%')
+    expect(renderLine(`a${E}[5Cb`)).toBe('a     b')
+  })
+  test("GNU grep's erase-line after each color changes nothing", () => {
+    expect(renderLine(`src/a.ts:${E}[01;31m${E}[Kmatch${E}[m${E}[K rest`)).toBe('src/a.ts:match rest')
+  })
+  test('a non-ASCII line drops only what an erase certainly removed', () => {
+    expect(renderLine(`日本${E}[2K語`)).toBe('語')
+    // An erase after a move: where it stood can't be counted, so the earlier frame stays.
+    expect(renderLine(`日本語 long text\r${E}[10C${E}[K`).split('\r')[0]).toBe('日本語 long text')
+    expect(renderLine(`日本語 10%\r${E}[K日本語 100%`)).toBe('日本語 100%')
+  })
+  test('a move past column 10,000 keeps the frames', () => {
+    expect(renderLine(`ab\r${E}[20000Gc`)).toBe('ab\rc')
+  })
 })
 
 describe('clean', () => {
@@ -148,11 +176,38 @@ describe('clean', () => {
     const t = 'naïve café ✓ 🎉\tcol2\x00end'
     expect(clean(t)).toBe(t)
   })
+  test('a line with an erase-line and no \\r is drawn too', () => {
+    expect(clean(`abc${E}[2K\nnext`)).toBe('\nnext')
+  })
+  test('a printed marker stops every collapse', () => {
+    const L = 'retrying connection to db:5432'
+    const t = `${L}\n${L}\n${L}\nbuild  [×3 identical lines]`
+    expect(printsMarker(t)).toBe(true)
+    expect(clean(t)).toBe(t)
+    expect(clean(`${L}\n${L}\n${L}`, false)).toBe(`${L}\n${L}\n${L}`)
+    expect(printsMarker(`${L}\n${L}\n${L}`)).toBe(false)
+    // After colors are removed it still reads as a marker.
+    expect(printsMarker(`x  [×12 identical lines]${E}[0m\r\n`)).toBe(true)
+    expect(printsMarker('a [×3 identical lines] in the middle')).toBe(false)
+  })
   test('200,000 lines finish quickly', () => {
     const t = Array.from({ length: 200_000 }, (_, i) => `${E}[32mline ${i % 7}${E}[0m`).join('\n')
     const start = Date.now()
     const out = clean(t)
     expect(Date.now() - start).toBeLessThan(1000)
     expect(out.startsWith('line 0\nline 1\n')).toBe(true)
+  })
+})
+
+describe('cleanLines', () => {
+  test('escape codes and redraws go, every line stays', () => {
+    const t = `a\na\na\n${E}[31mred${E}[0m\n50%\r100%\r\n\n[exited with code 0]\n`
+    const out = cleanLines(t)
+    expect(out).toBe('a\na\na\nred\n100%\r\n\n[exited with code 0]\n')
+    expect(out.split('\n').length).toBe(t.split('\n').length)
+  })
+  test('clean text comes back as the same string', () => {
+    const t = 'plain\nlines\n'
+    expect(cleanLines(t)).toBe(t)
   })
 })
