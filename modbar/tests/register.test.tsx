@@ -253,6 +253,36 @@ describe('a dependent that throws', () => {
   })
 })
 
+// A dependent that adds modbar's noun itself, beneath what's there, so it loads without modbar
+// (each one does). The kit builds it before modbar, so modbar's own step finds the noun there.
+// Its press passes on with the key marked, so the test sees its hook ran.
+const OWN = {
+  name: 'own',
+  register: (on: On) => {
+    on('engine.create', async ($, e, next) => ({ modbar: { blocks: async () => [], press: async () => false }, ...(await next(e)) }) as never)
+    on('modbar.blocks', async ($, e, next) => {
+      const r = (await next(e)) as unknown
+      const below = Array.isArray(r) ? r : ((r as { value?: unknown[] } | null)?.value ?? [])
+      return { value: [...below, { id: 'own.x', owner: 'own', order: 1, width: 'full', lines: [{ pieces: [{ text: 'from own' }, { button: { key: 'hit', label: 'Hit' } }] }] }] } as never
+    })
+    on('modbar.press', async ($, e, next) => next(e.owner === 'own' ? { ...e, key: `seen:${e.key}` } : e))
+  },
+}
+
+describe('a dependent that adds the noun itself', () => {
+  test('the band, /modbar and its presses work as before', { plugins: [OWN] }, async ($, on) => {
+    const { ui } = setup(on, { blocks: [WRITE] })
+    await start($)
+    const band = await mount($)
+    expect(await band.find({ type: 'Text', text: 'from own' })).toBeDefined()
+    expect(await band.find({ type: 'Button', key: 'handoff:handoff-write' })).toBeDefined()
+    expect(await $.ui.press({ plugin: 'modbar', key: 'own:hit' } as never)).toEqual({ element: 'own:hit' })
+    await band.unmount()
+    expect(ui.presses).toEqual([{ owner: 'own', key: 'seen:hit' }])
+    expect((await $.command.run(run('modbar'))).text).toBe('Shown:\n  own.x · own · full · left · 1\n  handoff.write · handoff · fit · right · 12')
+  })
+})
+
 describe('/modbar', () => {
   test('lists what is shown, what can be added and what is configured but not offered', async ($, on) => {
     setup(on, { blocks: [USAGE, LEGEND, WRITE, TOP], files: { [FILE]: '{"blocks":{"example.nudge":{"hidden":true},"context-bar.legend":{"hidden":true}}}' } })

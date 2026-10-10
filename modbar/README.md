@@ -18,8 +18,16 @@ The commands above write `~/.claude/modbar.json`. You don't need to edit it by h
 
 ## For mod authors
 
-A mod declares `"dependencies": ["modbar"]` and answers modbar's hook with its blocks. A block with `off: true` isn't drawn until the user runs `/modbar show <id>`, and its `about` text describes it in `/modbar`'s list. `types/index.d.ts` describes the contract.
+A mod answers modbar's hook with its blocks. A block with `off: true` isn't drawn until the user runs `/modbar show <id>`, and its `about` text describes it in `/modbar`'s list. `types/index.d.ts` describes the contract.
 
-A mod that hooks modbar doesn't load without it, so declare the dependency and tell your users to install modbar.
+So that your mod still works when modbar isn't loaded (only its blocks go undrawn), do two things:
+
+- Add modbar's noun yourself, beneath whatever is already there, with this line at the top of your `register`. Claude Code refuses a module that hooks a noun no loaded plugin provides; with this line, whichever mod is built first provides the same core (no blocks, no press taken), and none replaces another's. Keep the core exactly as here.
+
+  ```ts
+  on('engine.create', async ($, e, next) => ({ modbar: { blocks: async () => [], press: async () => false }, ...(await next(e)) }) as never)
+  ```
+
+- Don't list modbar under `dependencies` in your `plugin.json`: Claude Code turns a mod off when a plugin it lists there isn't loaded. Tell your users to install modbar to see your blocks.
 
 To test your hooks, load a stand-in for modbar beside your mod (an inline plugin in the test): it adds the `modbar` noun in `engine.create` and calls `$.modbar.blocks` or `$.modbar.press` from a command of its own, so your real hooks answer. The test's own `$` doesn't carry other mods' nouns. context-bar's tests show how.

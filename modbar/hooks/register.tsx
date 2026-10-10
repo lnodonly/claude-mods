@@ -81,11 +81,10 @@ function runs(pieces: ModbarPiece[]): (TextPiece[] | Exclude<ModbarPiece, TextPi
 }
 
 export const register: Register = on => {
-  // The noun: alone it offers nothing and handles no press; dependents' hooks add theirs.
-  on('engine.create', async ($, e, next) => {
-    const built = await next(e)
-    return { ...built, modbar: { blocks: async () => [] as ModbarBlock[], press: async () => false } }
-  })
+  // The noun: alone it offers nothing and handles no press; dependents' hooks add theirs. It goes
+  // beneath what's already there, as each dependent adds the same core itself (so a dependent
+  // loads without modbar): whichever is built first provides it, and no step replaces another's.
+  on('engine.create', async ($, e, next) => ({ modbar: { blocks: async () => [] as ModbarBlock[], press: async () => false }, ...(await next(e)) }))
 
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'modbar', description: 'Arrange the area above the prompt: /modbar lists blocks shown and ones you can add; add|remove|width|align|order <id> …' })

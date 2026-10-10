@@ -11,6 +11,8 @@ export type ModbarLine = { pieces: ModbarPiece[]; align?: ModbarAlign }
 export type ModbarBlock = { id: string; owner: string; order: number; width: ModbarWidth; align?: ModbarAlign; off?: boolean; about?: string; lines: ModbarLine[] }
 export type ModbarBlocksArgs = { columns: number }
 export type ModbarPressArgs = { owner: string; key: string }
+// Each dependent adds this noun itself in engine.create, beneath what's there, with the same core
+// as modbar's (blocks: [], press: false), so it loads without modbar: see the README.
 export type Modbar = {
   blocks: (args: ModbarBlocksArgs) => Promise<ModbarBlock[]>
   press: (args: ModbarPressArgs) => Promise<boolean>

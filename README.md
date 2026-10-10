@@ -33,7 +33,7 @@ Restart Claude Code afterwards. `claude plugin update <name>` picks up new versi
 git clone https://github.com/lnodonly/claude-mods.git ~/claude-mods
 ```
 
-Then list the mod folders in `~/.claude/settings.json`, separated by `:`, with modbar first:
+Then list the mod folders in `~/.claude/settings.json`, separated by `:`:
 
 ```json
 {
