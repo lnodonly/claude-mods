@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { autoNote, fullNote, legacyKey, noteKey, parseNote, relativeTo, stamp } from '../hooks/note'
+import { age, autoNote, fullNote, legacyKey, noteKey, parseNote, relativeTo, stamp } from '../hooks/note'
 
 const CWD = '/Users/u/Repository/my-project'
 const AT = new Date(2026, 9, 7, 21, 40).getTime()
@@ -72,6 +72,17 @@ describe('note', () => {
   test('a note without the header still loads; an empty one is no note', () => {
     expect(parseNote('## Next steps\n- [ ] Only step\n')).toEqual({ kind: 'full', written: '', steps: ['Only step'], text: '## Next steps\n- [ ] Only step\n' })
     expect(parseNote('  \n')).toBeUndefined()
+  })
+  // Backlog #77: an old note is never expired (it matters most after a long break); its age is said.
+  test("age: calendar days from the note's date to now, by local time", () => {
+    expect(age('2026-10-07 09:00', AT)).toBe('today')
+    expect(age('2026-10-06 23:50', new Date(2026, 9, 7, 0, 10).getTime())).toBe('yesterday')
+    expect(age('2026-09-03 14:00', AT)).toBe('34 days ago')
+    expect(age('2025-10-07 21:40', AT)).toBe('365 days ago')
+  })
+  test('no age for an undated note or one dated after now', () => {
+    expect(age('', AT)).toBeUndefined()
+    expect(age('2026-10-08 09:00', AT)).toBeUndefined()
   })
   test('paths relative to the folder when inside it', () => {
     expect(relativeTo(CWD, `${CWD}/config.xml`)).toBe('config.xml')

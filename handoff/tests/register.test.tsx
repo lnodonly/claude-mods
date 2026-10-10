@@ -183,7 +183,7 @@ describe('review fixes', () => {
     await submit($, 'Fix the login bug')
     await $.session.end({ reason: 'clear', sessionId: 's1' } as never)
     const ctx = (await $.prompt.context({ blocks: [] } as never)) as { blocks: { name: string; text: string }[] }
-    expect(ctx.blocks[0]!.text).toContain('(auto, 2026-10-07 21:40)')
+    expect(ctx.blocks[0]!.text).toContain('(auto, 2026-10-07 21:40, today)')
     await end($)
     expect(ui.writes.length).toBe(1)
     expect(files[NOTE]).toContain('> Fix the login bug')

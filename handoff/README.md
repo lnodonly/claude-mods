@@ -4,7 +4,7 @@ Keeps one note per project folder, so the next session there can pick up where t
 
 - **Full note:** `/handoff`, or the **[Write handoff note]** button above the prompt, has Claude write a note with what was done, where things stand, next steps, open questions and gotchas.
 - **Automatic note (off by default):** with `/handoff auto on`, a session that did work saves a quick note at exit, with no model call. It has the last request, the files changed (by Edit, Write or Bash, through git), the open tasks, and the previous full note's sections. It has no next steps, because only Claude can say which are still to do. A session that only talked leaves an existing note alone.
-- **Next session:** a new session in the folder gets the note as context for Claude.
+- **Next session:** a new session in the folder gets the note as context for Claude, with its date and age (`today`, `yesterday`, `34 days ago`). A note never expires, because it matters most after a long break. `/handoff clear` removes one you no longer want.
 
 Notes are written only for interactive sessions, not `-p` or SDK runs.
 

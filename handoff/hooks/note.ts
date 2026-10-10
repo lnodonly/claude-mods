@@ -35,7 +35,20 @@ export function stamp(ms: number): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+// How old a note is, in calendar days by local time (the time its stamp is written in): `today`,
+// `yesterday` or `N days ago`. None for an undated note or one dated after now. A note is never
+// expired, as it matters most after a long break; its age tells Claude how much to trust it.
+export function age(written: string, now: number): string | undefined {
+  const m = /^(\d{4})-(\d\d)-(\d\d) \d\d:\d\d$/.exec(written)
+  // A stamp with no zone is read as local time, as it was written.
+  if (m === null || new Date(written.replace(' ', 'T')).getTime() > now) return undefined
+  const today = new Date(now)
+  // Rounded: a day with a clock change is 23 or 25 hours long.
+  const days = Math.round((new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime() - new Date(+m[1]!, +m[2]! - 1, +m[3]!).getTime()) / 86_400_000)
+  return days === 0 ? 'today' : days === 1 ? 'yesterday' : `${days} days ago`
+}
+
+const MONTHS =['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 const folderName = (cwd: string) => cwd.split('/').filter(Boolean).pop() ?? cwd
 const header = (cwd: string, ms: number, kind: Note['kind']) => `# Handoff · ${folderName(cwd)} · ${stamp(ms)} · ${kind}`

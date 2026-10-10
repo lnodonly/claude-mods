@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import { autoNote, FORK_PROMPT, fullNote, legacyKey, noteKey, parseNote, previousSection, relativeTo, type Note } from './note'
+import { age, autoNote, FORK_PROMPT, fullNote, legacyKey, noteKey, parseNote, previousSection, relativeTo, type Note } from './note'
 
 export const note = atom({ plugin: 'handoff', key: 'note' } as const, null as Note | null)
 // This session did work worth handing off (drives the Write handoff note button).
@@ -384,7 +384,8 @@ export const register: Register = on => {
     const r = await next(e)
     const n = await read($, note)
     if (n === null || !interactive) return r
-    const text = `Handoff note from the previous session in this folder (${n.kind}, ${n.written || 'undated'}):\n\n${n.text.slice(0, 6000)}`
+    const old = age(n.written, await $.clock.now())
+    const text = `Handoff note from the previous session in this folder (${n.kind}, ${n.written || 'undated'}${old ? `, ${old}` : ''}):\n\n${n.text.slice(0, 6000)}`
     return { ...r, blocks: [...r.blocks, { name: 'handoff', text }] }
   })
 }

@@ -7,6 +7,8 @@ const HOME = '/Users/u'
 const CWD = '/Users/u/Repository/my-project'
 const NOTE = `${HOME}/.claude/handoffs/-Users-u-Repository-my-project-0af20ff9.md`
 const STEPS = ['One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven']
+// Three days after the note.
+const NOW = new Date(2026, 9, 10, 9, 0).getTime()
 const TEXT = `# Handoff · my-project · 2026-10-07 21:40 · full\n\n## Next steps\n\n${STEPS.map(s => `- [ ] ${s}`).join('\n')}\n`
 
 function setup(on: On, files: Record<string, string>) {
@@ -25,7 +27,7 @@ function setup(on: On, files: Record<string, string>) {
   })
   on('prompt.submit', ($, e) => ({ text: (e as { text: string }).text }) as never)
   mock.env(on, { HOME })
-  mock.clock(on, { now: 0 })
+  mock.clock(on, { now: NOW })
   on('fs.exists', ($, e) => ({ value: e.path in files }))
   on('fs.read', ($, e) => ({ value: files[e.path] ?? '' }) as never)
   on('command.register', () => ({ value: undefined }) as never)
@@ -62,7 +64,13 @@ describe('next session', () => {
     await start($)
     expect(ui.suggested).toEqual([])
     const ctx = (await $.prompt.context({ blocks: [] } as never)) as { blocks: { name: string; text: string }[] }
-    expect(ctx.blocks).toEqual([{ name: 'handoff', text: `Handoff note from the previous session in this folder (full, 2026-10-07 21:40):\n\n${TEXT}` }])
+    expect(ctx.blocks).toEqual([{ name: 'handoff', text: `Handoff note from the previous session in this folder (full, 2026-10-07 21:40, 3 days ago):\n\n${TEXT}` }])
+  })
+  test('an undated note is given without a date or age', async ($, on) => {
+    setup(on, { [NOTE]: '## Done\n\nX.\n' })
+    await start($)
+    const ctx = (await $.prompt.context({ blocks: [] } as never)) as { blocks: { name: string; text: string }[] }
+    expect(ctx.blocks[0]!.text).toBe('Handoff note from the previous session in this folder (full, undated):\n\n## Done\n\nX.\n')
   })
   test('no note: no suggestion, no context block', async ($, on) => {
     const ui = setup(on, {})
