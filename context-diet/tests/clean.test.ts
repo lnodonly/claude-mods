@@ -46,6 +46,17 @@ describe('stripEscapes', () => {
   test('removes charset and keypad sequences', () => {
     expect(stripEscapes(`${E}(Ba${E}=b${E}7c`)).toBe('abc')
   })
+  test('removes a terminated DCS, SOS, PM or APC string with its payload', () => {
+    // A sixel image (DCS) and a kitty graphics image (APC).
+    expect(stripEscapes(`before${E}Pq#0;2;0;0;0#0~~@@vv-${E}\\after`)).toBe('beforeafter')
+    expect(stripEscapes(`${E}_Gf=100,a=T;iVBORw0KGgo=${E}\\done`)).toBe('done')
+    expect(stripEscapes(`a${E}Xhidden${E}\\b${E}^note${E}\\c`)).toBe('abc')
+    expect(stripEscapes(`a${E}P1$r0m\x07b`)).toBe('ab')
+  })
+  test('an unterminated or cancelled control string keeps its text', () => {
+    expect(stripEscapes(`${E}Pq#0~~ more text`)).toBe('q#0~~ more text')
+    expect(stripEscapes(`${E}Pabc\x18shown${E}\\`)).toBe('abc\x18shown')
+  })
 })
 
 describe('renderLine', () => {
@@ -68,6 +79,10 @@ describe('renderLine', () => {
   })
   test('an empty trailing frame keeps what was drawn', () => {
     expect(renderLine('50%\r100%\r')).toBe('100%')
+  })
+  test('a line with an image keeps its frames, as the image can move the cursor', () => {
+    expect(renderLine(`foo${E}_Gf=100,a=T;AAAA${E}\\\rbar`)).toBe('foo\rbar')
+    expect(renderLine(`foo${E}Pq#0~~${E}\\\r${E}[2Kbar`)).toBe('foo\rbar')
   })
 })
 
@@ -115,6 +130,15 @@ describe('clean', () => {
   test('identical \\r\\n lines collapse and keep their ending', () => {
     const L = 'retrying connection to db:5432'
     expect(clean(`${L}\r\n${L}\r\n${L}\r\ny\r\n`)).toBe(`${L}  [×3 identical lines]\r\ny\r\n`)
+  })
+  test('a doubled \\r before a newline is kept as the line ending', () => {
+    const t = 'foo\r\r\nbar\r\r\n'
+    expect(clean(t)).toBe(t)
+    expect(clean(`50%\r100%\r\r\nnext`)).toBe('100%\r\r\nnext')
+    const L = 'retrying connection to db:5432'
+    expect(clean(`${L}\r\r\n${L}\r\r\n${L}\r\r\ny`)).toBe(`${L}  [×3 identical lines]\r\r\ny`)
+    // Lines whose endings differ are not one run.
+    expect(clean(`${L}\r\n${L}\r\r\n${L}\r\ny`)).toBe(`${L}\r\n${L}\r\r\n${L}\r\ny`)
   })
   test('clean text comes back as the same string', () => {
     const t = 'plain output\nwith two lines'

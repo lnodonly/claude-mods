@@ -2,7 +2,7 @@
 
 Bash output often carries colour codes, progress bars that redraw themselves, and long runs of identical lines. All of it costs context. context-diet cleans each Bash result before Claude sees it, keeping what a terminal would show once the command had finished:
 
-- Escape codes (colours, cursor moves, window titles) are removed.
+- Escape codes (colours, cursor moves, window titles, inline images) are removed.
 - Progress redraws (`\r` frames) collapse to their final state.
 - A run of identical lines becomes one line with `[×N identical lines]`, when that is shorter.
 

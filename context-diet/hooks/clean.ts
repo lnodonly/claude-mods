@@ -2,6 +2,11 @@
 // command finished, without the escape codes and redraws that drew it.
 
 const OSC = /\x1b\][^\x07\x1b\n]*(?:\x07|\x1b\\)?/g
+// DCS, SOS, PM and APC strings (sixel and kitty images, terminal queries): a
+// terminal never shows the payload. Removed whole only when the string ends
+// in the line; otherwise just the introducer goes, so no text can be lost.
+const STRING = /\x1b[PX^_][^\x07\x18\x1a\x1b]*(?:\x07|\x1b\\)/g
+const STRING_START = /\x1b[PX^_]/
 const CSI = /\x1b\[[0-?]*[ -/]*[@-~]/g
 // nF sequences (charset designation, ESC ( B) and two-byte ones (ESC 7, ESC =).
 const OTHER = /\x1b[ -/]+[0-~]|\x1b[0-~]/g
@@ -17,17 +22,21 @@ export function stripEscapes(s: string): string {
   if (s.indexOf('\x1b') === -1) return s
   return s
     .replace(OSC, '')
+    .replace(STRING, '')
     .replace(FORWARD, (_, n: string) => ' '.repeat(Math.min(Number(n || 1), FORWARD_MAX)))
     .replace(CSI, '')
     .replace(OTHER, '')
 }
 
-// One line (no \n, no CRLF \r) with bare \r redraws. Frames before the last
+// One line (no \n, no line-ending \r) with bare \r redraws. Frames before the last
 // erase-line are gone from the screen. The rest overwrite from the start,
 // keeping a longer earlier tail; where columns can't be counted safely, the
 // frames are kept, separated by \r, rather than guessed at.
 export function renderLine(line: string): string {
   const frames = line.split('\r')
+  // An image in a control string can move the cursor to another row, so
+  // neither overlaying nor an erase-line can be trusted: keep every frame.
+  if (STRING_START.test(line)) return frames.map(stripEscapes).filter(t => t !== '').join('\r')
   let start = 0
   frames.forEach((f, i) => {
     if (ERASE.test(f)) start = i
@@ -44,17 +53,20 @@ const MIN_RUN = 3
 export function clean(text: string): string {
   const lines = text.split('\n')
   const rows = lines.map(raw => {
-    const cr = raw.endsWith('\r')
-    const body = cr ? raw.slice(0, -1) : raw
-    return { text: body.includes('\r') ? renderLine(body) : stripEscapes(body), cr }
+    // Every \r at the end is the line's ending (\r\n, or \r\r\n from some
+    // Windows tools) and is kept byte for byte.
+    let end = raw.length
+    while (end > 0 && raw.charCodeAt(end - 1) === 13) end--
+    const body = raw.slice(0, end)
+    return { text: body.includes('\r') ? renderLine(body) : stripEscapes(body), eol: raw.slice(end) }
   })
   const out: string[] = []
   for (let i = 0; i < rows.length; ) {
     const row = rows[i]!
     let j = i + 1
-    while (j < rows.length && rows[j]!.text === row.text && rows[j]!.cr === row.cr) j++
+    while (j < rows.length && rows[j]!.text === row.text && rows[j]!.eol === row.eol) j++
     const run = j - i
-    const eol = row.cr ? '\r' : ''
+    const eol = row.eol
     const marked = `${row.text}  [×${run} identical lines]${eol}`
     // Only when it saves: for short lines the marker outweighs the run.
     if (run >= MIN_RUN && marked.length < run * (row.text.length + eol.length + 1) - 1) out.push(marked)
