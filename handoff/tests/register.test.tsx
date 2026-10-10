@@ -7,17 +7,20 @@ const NOTE = `${HOME}/.claude/handoffs/-Users-u-Repository-my-project-0af20ff9.m
 const AT = new Date(2026, 9, 7, 21, 40).getTime()
 const BODY = '## Done\n\nFixed login.\n\n## Where things stand\n\nOK.\n\n## Next steps\n\n- [ ] Check the staging site\n- [ ] Run the linter\n\n## Open questions\n\nNone.\n\n## Gotchas\n\nNone.'
 
-type Opts = { files?: Record<string, string>; store?: Record<string, unknown>; storeThrows?: boolean; fork?: { isAnswered: boolean; text?: string; reason?: string }; writeFails?: boolean; scrub?: (t: string) => string; shellCwd?: string; git?: Git; bash?: 'deny' | 'error' }
+type Opts = { files?: Record<string, string>; store?: Record<string, unknown>; storeThrows?: boolean; fork?: { isAnswered: boolean; text?: string; reason?: string }; writeFails?: boolean; scrub?: (t: string) => string; shellCwd?: string; git?: Git; bash?: 'deny' | 'error'; list?: Entry[] }
+type Entry = { name: string; kind: 'file' | 'dir' | 'other' }
 type GitState = { head: string; status: string[]; diff?: string[] }
 type Git = { top: string; before: GitState; after: GitState }
 
 function setup(on: On, opts: Opts = {}) {
   on('engine.create', async ($, e, next) => ({ ...(await next(e)), modbar: { blocks: async () => [], press: async () => false } }) as never)
   const files: Record<string, string> = { ...(opts.files ?? {}) }
-  const ui = { writes: [] as string[], suggested: [] as string[] }
+  const ui = { writes: [] as string[], suggested: [] as string[], gitDirs: [] as string[] }
   mock.env(on, { HOME })
   mock.clock(on, { now: AT })
   on('fs.exists', ($, e) => ({ value: e.path in files }))
+  // The project folder's entries; any other folder is empty.
+  on('fs.list', ($, e) => ({ value: (e.path === CWD ? (opts.list ?? []) : []).map(x => ({ ...x, size: 0, mtimeMs: 0, isLink: x.kind === 'other' })) }) as never)
   on('fs.read', ($, e) => ({ value: files[e.path] ?? '' }) as never)
   on('fs.write', ($, e) => {
     if (opts.writeFails) throw new Error('disk full')
@@ -71,6 +74,7 @@ function setup(on: On, opts: Opts = {}) {
     const a = [...e.argv].filter(x => !['--no-optional-locks', '-c', 'core.fsmonitor=false'].includes(x))
     const out = (stdout: string, exitCode = 0) => ({ value: { exitCode, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }) as never
     const dir = a[2] ?? ''
+    if (a[0] === 'git') ui.gitDirs.push(dir)
     const g = opts.git !== undefined && (dir === opts.git.top || dir.startsWith(`${opts.git.top}/`)) ? opts.git : undefined
     if (a[0] !== 'git' || g === undefined) return out('', 128)
     const st = ran ? g.after : g.before
@@ -399,6 +403,59 @@ describe('exit', () => {
     await $.tool.call({ tool: 'Bash', command: 'cp /tmp/style.css style.css' } as never)
     await end($)
     expect(files[NOTE]).toContain('## Files changed\n\n- theme/style.css\n\n')
+  })
+  // Backlog #136: a workspace folder that isn't a repo holds repos one level down; with the shell at
+  // its root no repo was seen, so Bash edits there weren't listed and a read-only command counted.
+  const site = `${CWD}/site`
+  const workspace = (after: string[]): Opts => ({
+    git: { top: site, before: { head: 'aaa', status: [] }, after: { head: 'aaa', status: after } },
+    list: [{ name: 'site', kind: 'dir' }, { name: 'notes.md', kind: 'file' }],
+    files: { [`${site}/.git`]: '' },
+  })
+  test('a repo in a subfolder of the project folder is watched while the shell stays at the root', async ($, on) => {
+    const { files } = setup(on, workspace([' M style.css']))
+    await start($)
+    await $.tool.call({ tool: 'Bash', command: 'sed -i "" s/a/b/ site/style.css' } as never)
+    await end($)
+    expect(files[NOTE]).toContain('## Files changed\n\n- site/style.css\n\n')
+  })
+  test('read-only Bash at a workspace root whose repos are in subfolders leaves an existing note alone', async ($, on) => {
+    const prev = '# Handoff · my-project · 2026-10-06 09:00 · full\n\n## Done\n\nFixed login.\n'
+    const { files, ui } = setup(on, { ...workspace([]), files: { [`${site}/.git`]: '', [NOTE]: prev } })
+    await start($)
+    await submit($, 'Where did we leave off?')
+    await $.tool.call({ tool: 'Bash', command: 'git -C site log --oneline -15' } as never)
+    await end($)
+    expect(ui.writes).toEqual([])
+    expect(files[NOTE]).toBe(prev)
+  })
+  test('only folders with .git are watched, and a link is not followed', async ($, on) => {
+    const opts = workspace([])
+    const { ui } = setup(on, { ...opts, list: [...opts.list!, { name: 'docs', kind: 'dir' }, { name: 'elsewhere', kind: 'other' }], files: { ...opts.files, [`${CWD}/elsewhere/.git`]: '' } })
+    await start($)
+    await $.tool.call({ tool: 'Bash', command: 'ls' } as never)
+    expect([...new Set(ui.gitDirs)].sort()).toEqual([CWD, site])
+  })
+  test('a folder holding more than 10 repos is a folder of projects: none of them is watched', async ($, on) => {
+    const names = Array.from({ length: 11 }, (_, i) => `r${i}`)
+    const git: Git = { top: `${CWD}/r0`, before: { head: 'aaa', status: [] }, after: { head: 'aaa', status: [' M a.txt'] } }
+    const { files, ui } = setup(on, { git, list: names.map(name => ({ name, kind: 'dir' })), files: Object.fromEntries(names.map(n => [`${CWD}/${n}/.git`, ''])) })
+    await start($)
+    await submit($, 'Tidy up')
+    await $.tool.call({ tool: 'Bash', command: 'ls' } as never)
+    await end($)
+    expect(ui.gitDirs.every(d => d === CWD)).toBe(true)
+    expect(files[NOTE]).toContain('## Files changed\n\nNone.\n\n')
+  })
+  // Each Bash command asked git about every folder before and after it; before is needed only once.
+  test('git is asked about a folder before a Bash command only until it has been seen', async ($, on) => {
+    const git: Git = { top: CWD, before: { head: 'aaa', status: [] }, after: { head: 'aaa', status: [] } }
+    const { ui } = setup(on, { git })
+    await start($)
+    await $.tool.call({ tool: 'Bash', command: 'ls' } as never)
+    expect(ui.gitDirs.length).toBe(6)
+    await $.tool.call({ tool: 'Bash', command: 'ls' } as never)
+    expect(ui.gitDirs.length).toBe(9)
   })
   test('a failed write never blocks exit', async ($, on) => {
     setup(on, { writeFails: true })

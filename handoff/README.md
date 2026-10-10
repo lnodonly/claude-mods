@@ -19,6 +19,6 @@ Requires [modbar](../modbar/) for the button.
 
 ## Limits
 
-- The note belongs to the folder the session started in, so a session started in a subfolder has its own note.
+- The note belongs to the folder the session started in, Claude Code's project folder for that session, so a session started in a subfolder has its own note.
 - Two sessions in the same folder share one note; the last to write it wins.
-- Bash changes are found through git: outside a git repo they aren't listed.
+- Bash changes are found through git, in the folder's repo, the repos in its direct subfolders and the repo the shell is in. Files outside those repos aren't listed. A folder with more than 10 repos one level down is treated as a folder of projects, and only the repo the shell is in is watched.

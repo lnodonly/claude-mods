@@ -30,6 +30,10 @@ let lastSeen: string | undefined
 // Each repo's git state from before the first Bash command run in it, by top folder, to find
 // what Bash changed.
 const bases = new Map<string, GitState>()
+// Folders git has been asked about: before a Bash command only the others need asking.
+const seen = new Set<string>()
+// Repos in the project folder's direct subfolders, found at the session's first Bash command.
+let subrepos: string[] | undefined
 
 function reset(folder: string) {
   cwd = folder
@@ -37,6 +41,8 @@ function reset(folder: string) {
   changed = false
   lastSeen = undefined
   bases.clear()
+  seen.clear()
+  subrepos = undefined
   files.clear()
   tasks.clear()
   todos = []
@@ -115,16 +121,35 @@ async function gitState($: EngineInterface, root: string): Promise<GitState | nu
   return { top: top.trim(), head, dirty: new Set(porcelainPaths(status)) }
 }
 
-// The repos Bash may have touched: the project folder's and the shell's folder's, once each. A
-// workspace folder may not be a repo itself while the one Claude cd's into is (live, 2026-10-09).
-async function repos($: EngineInterface): Promise<GitState[]> {
+// More repos than this one level down make a folder of projects (all one's clones, say), not one
+// project: none of them is watched, as asking git about each after every command would be slow.
+const MAX_SUBREPOS = 10
+
+// The project folder's direct subfolders that are repos (a `.git` folder, or file for a worktree
+// or submodule). Links aren't followed, and nothing deeper is looked at (node_modules and the like).
+async function findSubrepos($: EngineInterface, root: string): Promise<string[]> {
+  const entries = await $.fs.list(root).catch(() => [])
+  const dirs = entries.filter(x => x.kind === 'dir').map(x => `${root}/${x.name}`)
+  const has = await Promise.all(dirs.map(d => $.fs.exists(`${d}/.git`).catch(() => false)))
+  const found = dirs.filter((_, i) => has[i])
+  return found.length > MAX_SUBREPOS ? [] : found
+}
+
+// The folders whose repos Bash may have touched: the project folder, repos in its direct
+// subfolders, and the shell's folder. A workspace folder may not be a repo itself while the folders
+// in it are (live, 2026-10-09), and the shell may stay at its root (backlog #136).
+async function watched($: EngineInterface): Promise<string[]> {
+  const root = await folder($)
+  if (subrepos === undefined) subrepos = await findSubrepos($, root)
   const shell = await $.session.cwd().catch(() => '')
+  return [...new Set([root, ...subrepos, shell])].filter(d => d !== '')
+}
+
+// Each repo once, asking git about the folders in parallel.
+async function repos($: EngineInterface, dirs: string[]): Promise<GitState[]> {
   const out: GitState[] = []
-  for (const dir of new Set([await folder($), shell])) {
-    if (dir === '') continue
-    const st = await gitState($, dir)
-    if (st !== null && !out.some(o => o.top === st.top)) out.push(st)
-  }
+  for (const st of await Promise.all(dirs.map(d => gitState($, d)))) if (st !== null && !out.some(o => o.top === st.top)) out.push(st)
+  for (const d of dirs) seen.add(d)
   return out
 }
 
@@ -132,14 +157,15 @@ async function repos($: EngineInterface): Promise<GitState[]> {
 // Bash command in each repo, newly dirty or committed. Files already dirty then aren't counted, and
 // a repo first entered by a command (cd and edit in one) starts counting after it.
 // A read-only command (git log to answer "where were we?") changes nothing, so it doesn't count as
-// a change; outside any repo there's no telling, so it does. A refused command never ran, and one
-// that failed counts only for the files git shows it changed.
+// a change; with no repo in view there's no telling, so it does. A refused command never ran, and
+// one that failed counts only for the files git shows it changed.
 async function trackBash($: EngineInterface, e: unknown, next: (e: never) => Promise<ToolResult>) {
-  for (const st of await repos($)) if (!bases.has(st.top)) bases.set(st.top, st)
+  // Before the command, only folders git hasn't been asked about yet: the others have their base.
+  for (const st of await repos($, (await watched($)).filter(d => !seen.has(d)))) if (!bases.has(st.top)) bases.set(st.top, st)
   const r = await next(e as never)
   if (r.deny !== undefined) return r
   const root = await folder($)
-  const after = await repos($)
+  const after = await repos($, await watched($))
   let touched = ok(r) && after.length === 0
   for (const now of after) {
     const base = bases.get(now.top)
