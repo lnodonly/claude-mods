@@ -21,3 +21,5 @@ The commands above write `~/.claude/modbar.json`. You don't need to edit it by h
 A mod declares `"dependencies": ["modbar"]` and answers modbar's hook with its blocks. A block with `off: true` isn't drawn until the user runs `/modbar show <id>`, and its `about` text describes it in `/modbar`'s list. `types/index.d.ts` describes the contract.
 
 A mod that hooks modbar doesn't load without it, so declare the dependency and tell your users to install modbar.
+
+To test your hooks, load a stand-in for modbar beside your mod (an inline plugin in the test): it adds the `modbar` noun in `engine.create` and calls `$.modbar.blocks` or `$.modbar.press` from a command of its own, so your real hooks answer. The test's own `$` doesn't carry other mods' nouns. context-bar's tests show how.

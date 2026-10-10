@@ -107,4 +107,11 @@ describe('bar', () => {
     expect(barCells([], 10)).toEqual([])
     expect(barCells([{ value: 1 }], 0)).toEqual([0])
   })
+
+  test('a nearly full bar: a small segment\'s cell comes from the largest; segments past the window still fill the width', () => {
+    // The empty segments are down to one cell each: the small one's cell comes from the largest, so it still shows.
+    expect(barCells([{ value: 150_000 }, { value: 300 }, { value: 40_000, empty: true }, { value: 3_000, empty: true }], 50)).toEqual([38, 1, 10, 1])
+    // Scaled to the segments' own sum, not a maximum: a total past the window never runs past the width.
+    expect(barCells([{ value: 180_000 }, { value: 40_000, empty: true }], 40)).toEqual([33, 7])
+  })
 })
