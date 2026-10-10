@@ -2,7 +2,7 @@
 
 Mods (function-hook plugins) for Claude Code.
 
-| Mod | What it does |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Mod&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | What it does |
 |---|---|
 | [`modbar`](modbar/) | Draws the area above the prompt for the other mods. They hand it blocks, and it packs them into rows. `/modbar` lists the blocks and arranges them. |
 | [`context-bar`](context-bar/) | Shows the context window as a stacked bar with its percentage and a legend, drawn by modbar. |
