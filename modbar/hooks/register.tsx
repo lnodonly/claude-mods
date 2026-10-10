@@ -145,7 +145,7 @@ export const register: Register = on => {
         {pack(blocks, C).map((row, r) => (
           <Box key={`row${r}`} columnGap={row.some(c => c.block.width === 'fill') ? FILL_GAP : 0}>
             {row.map(c => (
-              <Box key={c.block.id} flexDirection="column" width={c.width} flexGrow={c.block.width === 'fill' ? 1 : 0}>
+              <Box key={c.block.id} flexDirection="column" width={c.width} flexGrow={c.block.width === 'fill' ? 1 : 0} {...(c.lead ? { marginLeft: c.lead } : {})}>
                 {c.block.lines.map((l, i) => line(c.block, l, c.width, i))}
               </Box>
             ))}
@@ -179,8 +179,12 @@ export const register: Register = on => {
     const verb = ({ list: '', add: 'show', remove: 'hide' } as Record<string, string>)[said] ?? said
     const c = await read($, config)
     const apply = async (change: Change, said: string) => {
+      // An id nothing offers now and the file doesn't name may be a typo, or a block its mod
+      // offers only at times (a notice, a button after some work): the edit stands either way,
+      // and the answer says the id isn't offered now.
+      const known = c.order.includes(id) || Object.hasOwn(c.blocks, id) || (await offered($, 100).catch(() => [])).some(b => b.id === id)
       await save($, editConfig(c, change))
-      return { text: `${id}: ${said}.` }
+      return { text: known ? `${id}: ${said}.` : `${id}: ${said}. No mod offers ${id} now; /modbar lists the ids.` }
     }
     if (verb === '') {
       const blocks = await offered($, 100).catch(() => [])

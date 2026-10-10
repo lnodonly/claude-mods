@@ -7,7 +7,8 @@ Draws the area above the prompt for other mods. Each mod hands modbar blocks (te
 - `/modbar` (or `/modbar list`): lists the blocks shown, with their ids, owners, widths and order, then the blocks you can add: those a mod offers off by default and those you've hidden.
 - `/modbar add <id>` and `/modbar remove <id>` (or `show` and `hide`): show or hide a block. A mod's name (e.g. `context-bar`) stands for all its blocks.
 - `/modbar width <id> full|half|third|fit|fill`: how much of a row a block takes. `full` gives it its own row; `half` and `third` share a row; `fit` takes what its content needs; `fill` takes what the others leave.
-- `/modbar align <id> left|right` and `/modbar order <id> <n>`: placement within a row, and the order of blocks.
+- `/modbar align <id> left|right` and `/modbar order <id> <n>`: placement within a row, and the order of blocks. A right-aligned block goes to the right end of its row when the row has room.
+- An edit to an id that no mod offers right now still applies, since some blocks only appear at times. The answer says the id isn't offered, in case it's a typo.
 - `/modbar reload`: re-read the settings file.
 - `/modbar reset confirm`: clear all modbar settings.
 

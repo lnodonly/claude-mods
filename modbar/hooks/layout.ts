@@ -24,7 +24,8 @@ export function parseConfig(text: string): { config: Config; problem?: string } 
   if (r.blocks !== undefined) {
     if (typeof r.blocks !== 'object' || r.blocks === null || Array.isArray(r.blocks)) return bad('blocks must be an object')
     for (const [id, v] of Object.entries(r.blocks as Record<string, unknown>)) {
-      const b = (v ?? {}) as { width?: unknown; align?: unknown; hidden?: unknown }
+      if (typeof v !== 'object' || v === null || Array.isArray(v)) return bad(`${id}: settings must be an object, like {"width": "half"}`)
+      const b = v as { width?: unknown; align?: unknown; hidden?: unknown }
       if (b.width !== undefined && !WIDTHS.includes(b.width as ModbarWidth)) return bad(`${id}: unknown width "${String(b.width)}"`)
       if (b.align !== undefined && b.align !== 'left' && b.align !== 'right') return bad(`${id}: align must be left or right`)
       if (b.hidden !== undefined && typeof b.hidden !== 'boolean') return bad(`${id}: hidden must be true or false`)
@@ -71,7 +72,8 @@ export function arrange(blocks: ModbarBlock[], c: Config): ModbarBlock[] {
 export const pieceWidth = (p: ModbarPiece) => ('text' in p ? p.text.length : 'button' in p ? p.button.label.length + 4 : 0)
 export const naturalWidth = (b: ModbarBlock) => Math.max(0, ...b.lines.map(l => l.pieces.reduce((a, p) => a + pieceWidth(p), 0)))
 
-export type Cell = { block: ModbarBlock; width: number }
+// lead: blank columns before the cell (the row's spare columns, before its first right-aligned block).
+export type Cell = { block: ModbarBlock; width: number; lead?: number }
 export type Row = Cell[]
 
 export function pack(blocks: ModbarBlock[], columns: number): Row[] {
@@ -105,6 +107,11 @@ export function pack(blocks: ModbarBlock[], columns: number): Row[] {
   for (const row of rows) {
     const fill = row.find(c => c.block.width === 'fill')
     if (fill) fill.width = Math.max(Math.min(MIN_FILL, C), C - row.filter(c => c !== fill).reduce((a, c) => a + c.width, 0) - FILL_GAP * (row.length - 1))
+    // A row with no fill has columns over: they go before its first right-aligned block, so that
+    // block (and any after it) sits at the right end, not just right within its own cell.
+    const right = fill ? undefined : row.find(c => c.block.align === 'right')
+    const spare = C - row.reduce((a, c) => a + c.width, 0)
+    if (right && spare > 0) right.lead = spare
   }
   return rows
 }

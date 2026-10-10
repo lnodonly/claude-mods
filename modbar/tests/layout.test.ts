@@ -16,6 +16,13 @@ describe('config', () => {
     expect(parseConfig('[]').problem).toBe('expected an object')
   })
 
+  test('parse: a block entry that is not an object is a problem, not empty settings', () => {
+    for (const v of ['"half"', 'null', '[]', '5', 'true']) {
+      expect(parseConfig(`{"blocks":{"a.b":${v}}}`)).toEqual({ config: EMPTY_CONFIG, problem: 'a.b: settings must be an object, like {"width": "half"}' })
+    }
+    expect(parseConfig('{"blocks":{"a.b":{}}}')).toEqual({ config: { order: [], blocks: { 'a.b': {} } } })
+  })
+
   test('edits', () => {
     let c = editConfig(EMPTY_CONFIG, { id: 'a.b', hidden: true })
     expect(c).toEqual({ order: [], blocks: { 'a.b': { hidden: true } } })
@@ -61,6 +68,22 @@ describe('pack', () => {
     expect(widths(pack([legend, btn], 100))).toEqual([['cb.legend:77', 'h.write:22']])
     // 20 (fill minimum) + 22 > 40: the button drops to its own row.
     expect(widths(pack([legend, btn], 40))).toEqual([['cb.legend:40'], ['h.write:22']])
+  })
+
+  test('a row with no fill puts its spare columns before its first right-aligned block', () => {
+    const right = (b: ModbarBlock): ModbarBlock => ({ ...b, align: 'right' })
+    const leads = (rows: ReturnType<typeof pack>) => rows.map(r => r.map(c => `${c.block.id}:${c.lead ?? 0}`))
+    // A right-aligned fit alone on its row (the legend's row gone or full): pushed to the right end.
+    expect(leads(pack([block('cb.legend', 'fill', 11), right(block('h.write', 'fit', 12, 'x'.repeat(22)))], 40))).toEqual([['cb.legend:0'], ['h.write:18']])
+    expect(leads(pack([right(block('h.write', 'fit', 12, 'x'.repeat(22)))], 100))).toEqual([['h.write:78']])
+    // Only the first right-aligned block takes them; the ones after it follow it to the right.
+    expect(leads(pack([block('a.1', 'third', 1), right(block('a.2', 'fit', 2, 'xxxx')), right(block('a.3', 'fit', 3, 'yy'))], 90))).toEqual([['a.1:0', 'a.2:54', 'a.3:0']])
+    // A right-aligned half alone sits in the right half.
+    expect(leads(pack([right(block('a.1', 'half', 1))], 90))).toEqual([['a.1:45']])
+    // Left-aligned rows, rows with a fill, and full rows keep none.
+    expect(leads(pack([block('a.1', 'fit', 1, 'xxxx')], 90))).toEqual([['a.1:0']])
+    expect(leads(pack([block('a.1', 'fill', 1), right(block('a.2', 'fit', 2, 'xxxx'))], 90))).toEqual([['a.1:0', 'a.2:0']])
+    expect(leads(pack([right(block('a.1', 'full', 1))], 90))).toEqual([['a.1:0']])
   })
 
   test('one fill per row; fit clamps to the width; narrow terminals never go negative', () => {
