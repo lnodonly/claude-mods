@@ -12,13 +12,11 @@ const run = (args: string) => ({
   presentation: { isFullscreen: false, columns: 100 },
 })
 
-// modbar isn't loaded in a test: its noun, as modbar provides it.
-const stubModbar = (on: On) =>
-  on('engine.create', async ($, e, next) => ({ ...(await next(e)), modbar: { blocks: async () => [], press: async () => false } }) as never)
+// Nothing stands in for modbar: context-diet adds modbar's noun itself, so every test here also
+// shows it works with no modbar loaded.
 
 // Stands in beneath the plugin for core's Bash and the session's messages.
 function setup(on: On, bash: Record<string, unknown> | { error: string }, messages: unknown[] = [], opts: { storeThrows?: boolean } = {}) {
-  stubModbar(on)
   if (opts.storeThrows) on('store.get', () => { throw new Error('store unavailable') })
   else mock.store(on)
   on('tool.call', { tool: 'Bash' }, () => {
@@ -74,7 +72,6 @@ describe('Bash cleanup', () => {
   })
 
   test('other tools are untouched', async ($, on) => {
-    stubModbar(on)
     mock.store(on)
     on('tool.call', { tool: 'Read' }, () => ({ result: { type: 'text', file: { filePath: '/a', content: 'x\nx\nx' } } }) as never)
     const r = await $.tool.call({ tool: 'Read', file_path: '/a' } as never)
@@ -114,7 +111,6 @@ describe('saved large output', () => {
   const CLEANED = 'building module café  [×5 identical lines]\ndone\n'
 
   function setupSaved(on: On, opts: { size?: number; readFails?: boolean; writeFails?: boolean } = {}) {
-    stubModbar(on)
     mock.store(on)
     const reads: string[] = []
     const writes: { path: string; text: string }[] = []
@@ -182,7 +178,6 @@ describe('background output', () => {
   const RAW = `${E}[33mprogress 1${E}[0m\r${E}[33mprogress 2${E}[0m\r${E}[2K${E}[32mdone${E}[0m\nsame\nsame\nsame\n\n[exited with code 0]\n`
 
   function setupBg(on: On) {
-    stubModbar(on)
     mock.store(on)
     on('tool.call', { tool: 'Bash' }, () => ({ result: { stdout: '', stderr: '', interrupted: false, backgroundTaskId: ID } }) as never)
     on('tool.call', { tool: 'Read' }, (_$, e) => ({
@@ -243,5 +238,12 @@ describe('modbar block', () => {
 
   test('before the first reply both are still offered, so /modbar can list them', () => {
     expect(blocksFor({ items: [], saved: 0 }).map(b => (b.lines[0]!.pieces[0] as { text: string }).text)).toEqual(['context-diet saved 0', 'Top: measured after the first reply'])
+  })
+})
+
+describe('without modbar', () => {
+  test('with no modbar loaded it loads and cleans Bash output', async ($, on) => {
+    setup(on, { stdout: `${E}[1mbuilt${E}[0m`, stderr: '', interrupted: false })
+    expect(bashOut(await $.tool.call({ tool: 'Bash', command: 'make' } as never)).stdout).toBe('built')
   })
 })

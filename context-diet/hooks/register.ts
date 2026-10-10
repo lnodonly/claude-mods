@@ -91,6 +91,11 @@ export function blocksFor(s: Summary) {
 }
 
 export const register: Register = on => {
+  // modbar's noun as modbar adds it, beneath what's already there: without modbar this mod still
+  // loads and cleans output (nothing asks for its blocks); with it, whichever is built first gives
+  // the same core, so no step replaces another's. The core stays modbar's: no blocks, no press taken.
+  on('engine.create', async ($, e, next) => ({ modbar: { blocks: async () => [], press: async () => false }, ...(await next(e)) }) as never)
+
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'context-diet',

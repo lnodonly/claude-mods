@@ -5,8 +5,5 @@
   "author": {
     "name": "Lauren Nodonly"
   },
-  "types": "./types/index.d.ts",
-  "dependencies": [
-    "modbar"
-  ]
+  "types": "./types/index.d.ts"
 }
