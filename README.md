@@ -9,7 +9,7 @@ Mods (function-hook plugins) for Claude Code.
 | [`context-diet`](context-diet/) | Removes escape codes, progress redraws and runs of identical lines from Bash output (lossless only), and lists the biggest items in context. |
 | [`handoff`](handoff/) | Keeps a note per project folder for the next session: <code>/&#8288;handoff</code> writes a full one; with <code>/&#8288;handoff&nbsp;auto&nbsp;on</code>, exit also saves a quick one when work happened. |
 
-context-bar, context-diet and handoff draw through modbar, so install modbar with them. context-diet shows the tokens its cleanup saved, and offers a row with the biggest items in context that is off until you run <code>/&#8288;modbar&nbsp;add&nbsp;context-diet.top</code>.
+context-bar draws through modbar, so install modbar with it. context-diet and handoff work on their own, and with modbar they also show their blocks. context-diet shows the tokens its cleanup saved, and offers a row with the biggest items in context that is off until you run <code>/&#8288;modbar&nbsp;add&nbsp;context-diet.top</code>.
 
 None of the mods needs configuration.
 

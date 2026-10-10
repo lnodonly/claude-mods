@@ -20,7 +20,9 @@ The commands above write `~/.claude/modbar.json`. You don't need to edit it by h
 
 A mod answers modbar's hook with its blocks. A block with `off: true` isn't drawn until the user runs `/modbar show <id>`, and its `about` text describes it in `/modbar`'s list. `types/index.d.ts` describes the contract.
 
-So that your mod still works when modbar isn't loaded (only its blocks go undrawn), do two things:
+If your mod only draws blocks (as context-bar does), list modbar under `dependencies` in your `plugin.json`: without modbar there is nothing for it to do, and Claude Code then turns it off.
+
+If your mod does useful work without modbar (as handoff and context-diet do), let it keep working when modbar isn't loaded, with only its blocks undrawn. Do two things:
 
 - Add modbar's noun yourself, beneath whatever is already there, with this line at the top of your `register`. Claude Code refuses a module that hooks a noun no loaded plugin provides; with this line, whichever mod is built first provides the same core (no blocks, no press taken), and none replaces another's. Keep the core exactly as here.
 

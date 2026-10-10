@@ -8,7 +8,7 @@ Keeps one note per project folder, so the next session there can pick up where t
 
 Notes are written only for interactive sessions, not `-p` or SDK runs.
 
-Requires [modbar](../modbar/) for the button.
+The button is drawn by [modbar](../modbar/). Without modbar, handoff still writes and loads notes; only the button is missing.
 
 ## Commands
 
