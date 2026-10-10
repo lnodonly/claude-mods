@@ -1,0 +1,12 @@
+{
+  "name": "handoff",
+  "version": "0.1.0",
+  "description": "A note per project folder for the next session: /handoff writes a full one, and with /handoff auto on exit saves a quick one when work happened; the next session gives Claude the note",
+  "author": {
+    "name": "Lauren Nodonly"
+  },
+  "types": "./types/index.d.ts",
+  "dependencies": [
+    "modbar"
+  ]
+}

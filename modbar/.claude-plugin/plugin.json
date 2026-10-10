@@ -1,0 +1,7 @@
+{
+  "name": "modbar",
+  "version": "0.1.0",
+  "description": "Draws the area above the prompt for other mods: their blocks, packed into configurable rows",
+  "author": { "name": "Lauren Nodonly" },
+  "types": "./types/index.d.ts"
+}

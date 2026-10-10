@@ -1,0 +1,29 @@
+{
+  "name": "claude-mods",
+  "owner": {
+    "name": "Lauren Nodonly"
+  },
+  "description": "Mods for Claude Code: a configurable area above the prompt, a context bar, lossless output cleanup and session handoff notes",
+  "plugins": [
+    {
+      "name": "modbar",
+      "source": "./modbar",
+      "description": "Draws the area above the prompt for other mods: their blocks, packed into configurable rows"
+    },
+    {
+      "name": "context-bar",
+      "source": "./context-bar",
+      "description": "The context window as a stacked bar with its percentage and a legend, drawn by modbar"
+    },
+    {
+      "name": "context-diet",
+      "source": "./context-diet",
+      "description": "Removes escape codes, progress redraws and identical-line runs from Bash output (lossless), and lists the biggest items in context"
+    },
+    {
+      "name": "handoff",
+      "source": "./handoff",
+      "description": "A note per project folder for the next session: /handoff writes a full one; exit can save a quick one (/handoff auto on)"
+    }
+  ]
+}

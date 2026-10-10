@@ -1,0 +1,30 @@
+// The contract dependents get (self-contained: no imports).
+export type ModbarWidth = 'full' | 'half' | 'third' | 'fit' | 'fill'
+export type ModbarAlign = 'left' | 'right'
+export type ModbarText = { text: string; color?: string; bold?: boolean; dim?: boolean }
+export type ModbarButton = { button: { key: string; label: string; primary?: boolean } }
+export type ModbarBar = { bar: { value: number; color?: string; dim?: boolean; empty?: boolean }[] }
+export type ModbarPiece = ModbarText | ModbarButton | ModbarBar
+export type ModbarLine = { pieces: ModbarPiece[]; align?: ModbarAlign }
+export type ModbarBlock = { id: string; owner: string; order: number; width: ModbarWidth; align?: ModbarAlign; lines: ModbarLine[] }
+export type ModbarBlocksArgs = { columns: number }
+export type ModbarPressArgs = { owner: string; key: string }
+export type Modbar = {
+  blocks: (args: ModbarBlocksArgs) => Promise<ModbarBlock[]>
+  press: (args: ModbarPressArgs) => Promise<boolean>
+}
+export type ModbarSettings = { width?: ModbarWidth; align?: ModbarAlign; hidden?: boolean }
+export type ModbarConfig = { order: string[]; blocks: Record<string, ModbarSettings> }
+
+declare module 'claude-code' {
+  interface EngineInterface {
+    modbar: Modbar
+  }
+  interface PluginState {
+    modbar: {
+      config: ModbarConfig
+      problem: string | null
+      theme: string | null
+    }
+  }
+}

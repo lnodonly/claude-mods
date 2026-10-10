@@ -1,0 +1,12 @@
+{
+  "name": "context-bar",
+  "version": "0.1.0",
+  "description": "Shows the context window as a stacked bar (with its percentage) and a legend, drawn by modbar; hide or show with /modbar hide|show context-bar",
+  "types": "./types/index.d.ts",
+  "dependencies": [
+    "modbar"
+  ],
+  "author": {
+    "name": "Lauren Nodonly"
+  }
+}

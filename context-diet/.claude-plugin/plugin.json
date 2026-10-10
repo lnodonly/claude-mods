@@ -1,0 +1,7 @@
+{
+  "name": "context-diet",
+  "version": "0.1.0",
+  "description": "Removes escape codes, progress redraws and identical-line runs from Bash output (lossless), and lists the biggest items in context",
+  "author": { "name": "Lauren Nodonly" },
+  "types": "./types/index.d.ts"
+}
