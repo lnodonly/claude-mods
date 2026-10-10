@@ -1,20 +1,39 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { autoNote, fullNote, noteKey, parseNote, relativeTo, stamp } from '../hooks/note'
+import { autoNote, fullNote, legacyKey, noteKey, parseNote, relativeTo, stamp } from '../hooks/note'
 
 const CWD = '/Users/u/Repository/my-project'
 const AT = new Date(2026, 9, 7, 21, 40).getTime()
 
 describe('note', () => {
-  test('key from the folder', () => {
-    expect(noteKey(CWD)).toBe('-Users-u-Repository-my-project')
-    expect(noteKey('/a b/c.d')).toBe('-a-b-c-d')
+  test('key: the folder made safe, then a hash of the whole path', async () => {
+    expect(await noteKey(CWD)).toBe('-Users-u-Repository-my-project-0af20ff9')
+    expect(legacyKey('/a b/c.d')).toBe('-a-b-c-d')
+  })
+  // Backlog #79: folders that read alike shared one note; a deep path made a name too long to write.
+  test('folders that read alike get their own keys; a deep path still fits a file name', async () => {
+    expect(await noteKey('/a-b')).toBe('-a-b-590bb8f6')
+    expect(await noteKey('/a/b')).toBe('-a-b-662b7b62')
+    expect(await noteKey('/\u00e9')).not.toBe(await noteKey('/\u00fc'))
+    expect(await noteKey(`/${'x'.repeat(400)}`)).toMatch(/^x{200}-[0-9a-f]{8}$/)
   })
   test('stamp and the band date', () => {
     expect(stamp(AT)).toBe('2026-10-07 21:40')
   })
   test('a full note: header line, then the body as written', () => {
     expect(fullNote(CWD, AT, '\n## Done\n\nStuff.\n')).toBe('# Handoff · my-project · 2026-10-07 21:40 · full\n\n## Done\n\nStuff.\n')
+  })
+  // Backlog #82: a reply wrapped in a code fence kept it, in /handoff show and Claude's context.
+  test('a full note drops a code fence wrapped round the whole reply', () => {
+    const want = '# Handoff · my-project · 2026-10-07 21:40 · full\n\n## Done\n\nStuff.\n'
+    expect(fullNote(CWD, AT, '```markdown\n## Done\n\nStuff.\n```\n')).toBe(want)
+    expect(fullNote(CWD, AT, '```\n\n## Done\n\nStuff.\n\n```')).toBe(want)
+    expect(fullNote(CWD, AT, '~~~md\n## Done\n\nStuff.\n~~~')).toBe(want)
+    expect(fullNote(CWD, AT, '```markdown\n## Done\n\n```bash\nnpm test\n```\n```')).toBe('# Handoff · my-project · 2026-10-07 21:40 · full\n\n## Done\n\n```bash\nnpm test\n```\n')
+  })
+  test('a code block inside the note is kept', () => {
+    const body = '## Done\n\nRan:\n\n```bash\nnpm test\n```'
+    expect(fullNote(CWD, AT, body)).toBe(`# Handoff · my-project · 2026-10-07 21:40 · full\n\n${body}\n`)
   })
   test('an automatic note', () => {
     expect(autoNote(CWD, AT, { lastRequest: 'Fix the login bug', files: ['config.xml', '/tmp/x.txt'], tasks: ['Verify on staging'] })).toBe([

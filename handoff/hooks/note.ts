@@ -4,7 +4,18 @@ export type Note = { kind: 'full' | 'auto'; written: string; steps: string[]; te
 export type Previous = { title: string; body: string }
 export type Tracked = { lastRequest?: string; lastRequestMissing?: string; files: string[]; tasks: string[]; previous?: Previous }
 
-export const noteKey = (cwd: string) => cwd.replace(/[^A-Za-z0-9]/g, '-')
+// A note's file name: the folder's path with every character but letters and digits made `-` (the
+// last 200 characters, so a deep path still fits a file name), then a hash of the whole path, so
+// folders that read alike (`/a-b` and `/a/b`, or names in another script) each get their own note.
+export async function noteKey(cwd: string): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(cwd)))
+  const hash = [...digest.slice(0, 4)].map(b => b.toString(16).padStart(2, '0')).join('')
+  return `${legacyKey(cwd).slice(-200)}-${hash}`
+}
+
+// The key before it had a hash: a note saved under it is still read until the folder has one
+// under its own key.
+export const legacyKey = (cwd: string) => cwd.replace(/[^A-Za-z0-9]/g, '-')
 
 export const FORK_PROMPT = [
   'Write a handoff note for whoever continues this work in a new session (it may be you, with none of this conversation). Use exactly these sections, in this order:',
@@ -32,7 +43,10 @@ const header = (cwd: string, ms: number, kind: Note['kind']) => `# Handoff · ${
 // The model may write the heading as `### Next Steps:` or `**Next steps**`; the note always says `## Next steps`.
 const normalizeSteps = (body: string) => body.replace(/^[ \t]*(?:#{1,6}[ \t]*)?\**[ \t]*Next steps[ \t]*\**:?[ \t]*$/gim, '## Next steps')
 
-export const fullNote = (cwd: string, ms: number, body: string) => `${header(cwd, ms, 'full')}\n\n${normalizeSteps(body.trim())}\n`
+// The model may wrap its whole reply in a code fence (```markdown … ```); the note is what's inside.
+const unfence = (body: string) => /^(`{3,}|~{3,})[^\n]*\n([\s\S]*)\n\1[ \t]*$/.exec(body)?.[2]?.trim() ?? body
+
+export const fullNote = (cwd: string, ms: number, body: string) => `${header(cwd, ms, 'full')}\n\n${normalizeSteps(unfence(body.trim()))}\n`
 
 const PREVIOUS = '## Previous full note'
 

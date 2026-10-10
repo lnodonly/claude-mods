@@ -5,7 +5,7 @@ import type { On } from 'claude-code'
 
 const HOME = '/Users/u'
 const CWD = '/Users/u/Repository/my-project'
-const NOTE = `${HOME}/.claude/handoffs/-Users-u-Repository-my-project.md`
+const NOTE = `${HOME}/.claude/handoffs/-Users-u-Repository-my-project-0af20ff9.md`
 const STEPS = ['One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven']
 const TEXT = `# Handoff · my-project · 2026-10-07 21:40 · full\n\n## Next steps\n\n${STEPS.map(s => `- [ ] ${s}`).join('\n')}\n`
 

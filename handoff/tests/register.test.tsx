@@ -3,11 +3,11 @@ import type { On } from 'claude-code'
 
 const HOME = '/Users/u'
 const CWD = '/Users/u/Repository/my-project'
-const NOTE = `${HOME}/.claude/handoffs/-Users-u-Repository-my-project.md`
+const NOTE = `${HOME}/.claude/handoffs/-Users-u-Repository-my-project-0af20ff9.md`
 const AT = new Date(2026, 9, 7, 21, 40).getTime()
 const BODY = '## Done\n\nFixed login.\n\n## Where things stand\n\nOK.\n\n## Next steps\n\n- [ ] Check the staging site\n- [ ] Run the linter\n\n## Open questions\n\nNone.\n\n## Gotchas\n\nNone.'
 
-type Opts = { files?: Record<string, string>; store?: Record<string, unknown>; storeThrows?: boolean; fork?: { isAnswered: boolean; text?: string; reason?: string }; writeFails?: boolean; scrub?: (t: string) => string; shellCwd?: string; git?: Git }
+type Opts = { files?: Record<string, string>; store?: Record<string, unknown>; storeThrows?: boolean; fork?: { isAnswered: boolean; text?: string; reason?: string }; writeFails?: boolean; scrub?: (t: string) => string; shellCwd?: string; git?: Git; bash?: 'deny' | 'error' }
 type GitState = { head: string; status: string[]; diff?: string[] }
 type Git = { top: string; before: GitState; after: GitState }
 
@@ -59,8 +59,11 @@ function setup(on: On, opts: Opts = {}) {
   on('prompt.context', ($, e) => ({ blocks: e.blocks }) as never)
   on('tool.call', { tool: 'Edit' }, () => ({ result: { filePath: 'x', oldString: 'a', newString: 'b' } }) as never)
   let ran = false
+  // bash: a guard refuses the command (it never runs), or it runs and fails.
   on('tool.call', { tool: 'Bash' }, () => {
+    if (opts.bash === 'deny') return { deny: 'Refused by a guard.' } as never
     ran = true
+    if (opts.bash === 'error') return { isError: true, result: 'Exit code 1', text: 'Exit code 1' } as never
     return { result: { stdout: '', stderr: '', interrupted: false } } as never
   })
   // No git option: not a git folder, as git answers outside a repo.
@@ -95,7 +98,7 @@ describe('/handoff', () => {
     await start($)
     const out = (await $.command.run(run(''))).text!
     expect(files[NOTE]).toBe(`# Handoff · my-project · 2026-10-07 21:40 · full\n\n${BODY}\n`)
-    expect(out).toBe('Handoff saved to ~/.claude/handoffs/-Users-u-Repository-my-project.md.\n\nNext steps:\n- Check the staging site\n- Run the linter')
+    expect(out).toBe('Handoff saved to ~/.claude/handoffs/-Users-u-Repository-my-project-0af20ff9.md.\n\nNext steps:\n- Check the staging site\n- Run the linter')
   })
   test('a failed fork writes nothing', async ($, on) => {
     const { ui } = setup(on, { fork: { isAnswered: false, reason: 'api-error' } })
@@ -116,8 +119,29 @@ describe('/handoff', () => {
   test('after a reload, the note goes to the project folder, not the shell folder', async ($, on) => {
     const { files } = setup(on, { shellCwd: `${CWD}/scripts` })
     const out = (await $.command.run(run(''))).text!
-    expect(out).toMatch(/^Handoff saved to ~\/\.claude\/handoffs\/-Users-u-Repository-my-project\.md\./)
+    expect(out).toMatch(/^Handoff saved to ~\/\.claude\/handoffs\/-Users-u-Repository-my-project-0af20ff9\.md\./)
     expect(files[NOTE]).toMatch(/^# Handoff · my-project · /)
+  })
+  // Notes saved before keys had a hash (backlog #79) stay the folder's until a new one replaces them.
+  test('a note under the old key is still loaded and shown; clearing hides it', async ($, on) => {
+    const LEGACY = `${HOME}/.claude/handoffs/-Users-u-Repository-my-project.md`
+    const old = '# Handoff · my-project · 2026-10-06 09:00 · full\n\n## Done\n\nOld work.\n'
+    const { files } = setup(on, { files: { [LEGACY]: old } })
+    await start($)
+    const ctx = (await $.prompt.context({ blocks: [] } as never)) as { blocks: { name: string; text: string }[] }
+    expect(ctx.blocks[0]!.text).toContain('Old work.')
+    expect((await $.command.run(run('show'))).text).toBe(old)
+    await $.command.run(run('clear'))
+    expect((await $.command.run(run('show'))).text).toBe('No handoff note for this folder.')
+    expect(files[LEGACY]).toBe(old)
+  })
+  test('a full note replacing an old-key note goes under the new key', async ($, on) => {
+    const LEGACY = `${HOME}/.claude/handoffs/-Users-u-Repository-my-project.md`
+    const { files } = setup(on, { files: { [LEGACY]: '# Handoff · my-project · 2026-10-06 09:00 · full\n\nOld.\n' } })
+    await start($)
+    await $.command.run(run(''))
+    expect(files[NOTE]).toBe(`# Handoff · my-project · 2026-10-07 21:40 · full\n\n${BODY}\n`)
+    expect((await $.command.run(run('show'))).text).toBe(files[NOTE])
   })
 })
 
@@ -302,6 +326,32 @@ describe('exit', () => {
     await $.tool.call({ tool: 'Bash', command: 'rm exports/old.csv' } as never)
     await end($)
     expect(files[NOTE]).toContain('> Tidy the exports')
+  })
+  // Backlog #81: a refused or failed command counted as work, so it replaced the note.
+  test('a refused Bash command is not work: nothing is written', async ($, on) => {
+    const { ui } = setup(on, { bash: 'deny' })
+    await start($)
+    await $.tool.call({ tool: 'Bash', command: 'rm exports/old.csv' } as never)
+    await end($)
+    expect(ui.writes).toEqual([])
+  })
+  test('a failed Bash command outside any repo is not work: an existing note stays', async ($, on) => {
+    const prev = '# Handoff · my-project · 2026-10-06 09:00 · full\n\n## Done\n\nFixed login.\n'
+    const { files, ui } = setup(on, { files: { [NOTE]: prev }, bash: 'error' })
+    await start($)
+    await submit($, 'Where did we leave off?')
+    await $.tool.call({ tool: 'Bash', command: 'cat notes.md' } as never)
+    await end($)
+    expect(ui.writes).toEqual([])
+    expect(files[NOTE]).toBe(prev)
+  })
+  test('a failed Bash command in a repo still lists the files git shows it changed', async ($, on) => {
+    const git: Git = { top: CWD, before: { head: 'aaa', status: [] }, after: { head: 'aaa', status: [' M config.xml'] } }
+    const { files } = setup(on, { git, bash: 'error' })
+    await start($)
+    await $.tool.call({ tool: 'Bash', command: 'sed -i "" s/a/b/ config.xml && false' } as never)
+    await end($)
+    expect(files[NOTE]).toContain('## Files changed\n\n- config.xml\n\n')
   })
   test('a talk-only session still writes a note when the folder has none', async ($, on) => {
     const { files } = setup(on)

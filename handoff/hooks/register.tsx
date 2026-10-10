@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import { autoNote, FORK_PROMPT, fullNote, noteKey, parseNote, previousSection, relativeTo, type Note } from './note'
+import { autoNote, FORK_PROMPT, fullNote, legacyKey, noteKey, parseNote, previousSection, relativeTo, type Note } from './note'
 
 export const note = atom({ plugin: 'handoff', key: 'note' } as const, null as Note | null)
 // This session did work worth handing off (drives the Write handoff note button).
@@ -49,15 +49,20 @@ async function folder($: EngineInterface): Promise<string> {
   return cwd
 }
 
-async function notePath($: EngineInterface): Promise<{ path: string; shown: string }> {
+async function notePath($: EngineInterface): Promise<{ path: string; shown: string; legacy: string }> {
   const home = (await $.env.get('HOME')) ?? ''
-  const name = `${noteKey(await folder($))}.md`
-  return { path: `${home}/.claude/handoffs/${name}`, shown: `~/.claude/handoffs/${name}` }
+  const dir = await folder($)
+  const name = `${await noteKey(dir)}.md`
+  return { path: `${home}/.claude/handoffs/${name}`, shown: `~/.claude/handoffs/${name}`, legacy: `${home}/.claude/handoffs/${legacyKey(dir)}.md` }
 }
 
+// A note under the old key (no hash) is the folder's until one is written or cleared under the new
+// key; it isn't moved, as another folder that read alike may share it.
 async function readNote($: EngineInterface): Promise<string> {
-  const { path } = await notePath($)
-  return (await $.fs.exists(path)) ? ((await $.fs.read(path)) as string) : ''
+  const { path, legacy } = await notePath($)
+  if (await $.fs.exists(path)) return (await $.fs.read(path)) as string
+  // An old key too long for a file name was never written.
+  return (await $.fs.exists(legacy).catch(() => false)) ? ((await $.fs.read(legacy)) as string) : ''
 }
 
 type ToolResult = { deny?: string; isError?: boolean; result?: unknown }
@@ -127,14 +132,15 @@ async function repos($: EngineInterface): Promise<GitState[]> {
 // Bash command in each repo, newly dirty or committed. Files already dirty then aren't counted, and
 // a repo first entered by a command (cd and edit in one) starts counting after it.
 // A read-only command (git log to answer "where were we?") changes nothing, so it doesn't count as
-// a change; outside any repo there's no telling, so it does.
+// a change; outside any repo there's no telling, so it does. A refused command never ran, and one
+// that failed counts only for the files git shows it changed.
 async function trackBash($: EngineInterface, e: unknown, next: (e: never) => Promise<ToolResult>) {
   for (const st of await repos($)) if (!bases.has(st.top)) bases.set(st.top, st)
   const r = await next(e as never)
-  await markWork($)
+  if (r.deny !== undefined) return r
   const root = await folder($)
   const after = await repos($)
-  if (after.length === 0) changed = true
+  let touched = ok(r) && after.length === 0
   for (const now of after) {
     const base = bases.get(now.top)
     if (base === undefined) {
@@ -147,8 +153,10 @@ async function trackBash($: EngineInterface, e: unknown, next: (e: never) => Pro
       found.push(...(diff ?? '').split('\0').filter(f => f !== ''))
     }
     for (const f of found) files.add(relativeTo(root, `${now.top}/${f}`))
-    if (found.length > 0) changed = true
+    if (found.length > 0) touched = true
   }
+  if (touched) changed = true
+  if (touched || ok(r)) await markWork($)
   return r
 }
 
