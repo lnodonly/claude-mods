@@ -48,7 +48,7 @@ export function age(written: string, now: number): string | undefined {
   return days === 0 ? 'today' : days === 1 ? 'yesterday' : `${days} days ago`
 }
 
-const MONTHS =['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 const folderName = (cwd: string) => cwd.split('/').filter(Boolean).pop() ?? cwd
 const header = (cwd: string, ms: number, kind: Note['kind']) => `# Handoff · ${folderName(cwd)} · ${stamp(ms)} · ${kind}`
