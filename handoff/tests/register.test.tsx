@@ -15,7 +15,7 @@ type Git = { top: string; before: GitState; after: GitState }
 function setup(on: On, opts: Opts = {}) {
   on('engine.create', async ($, e, next) => ({ ...(await next(e)), modbar: { blocks: async () => [], press: async () => false } }) as never)
   const files: Record<string, string> = { ...(opts.files ?? {}) }
-  const ui = { writes: [] as string[], suggested: [] as string[], gitDirs: [] as string[] }
+  const ui = { writes: [] as string[], suggested: [] as string[], gitDirs: [] as string[], commands: [] as string[] }
   mock.env(on, { HOME })
   const clock = mock.clock(on, { now: AT })
   on('fs.exists', ($, e) => ({ value: e.path in files }))
@@ -28,7 +28,10 @@ function setup(on: On, opts: Opts = {}) {
     ui.writes.push(e.path)
     return { value: undefined } as never
   })
-  on('command.register', () => ({ value: undefined }) as never)
+  on('command.register', ($, e) => {
+    ui.commands.push(e.name)
+    return { value: undefined } as never
+  })
   // Automatic notes are off by default; most tests here are about them, so they turn them on.
   const store: Record<string, unknown> = { ...(opts.store ?? { auto: true }) }
   on('store.get', ($, e) => {
@@ -93,6 +96,8 @@ function setup(on: On, opts: Opts = {}) {
 
 const run = (args: string) => ({ command: 'handoff', args, origin: { kind: 'composer' as const }, presentation: { isFullscreen: false, columns: 100 } })
 const start = ($: { session: { start: (a: never) => Promise<unknown> } }, isInteractive = true) => $.session.start({ cwd: CWD, surface: null, isInteractive } as never)
+// session.start in a folder: a new session's own, or a hot reload's, which has the shell's.
+const startIn = ($: { session: { start: (a: never) => Promise<unknown> } }, cwd: string) => $.session.start({ cwd, surface: null, isInteractive: true } as never)
 const end = ($: { session: { end: (a: never) => Promise<unknown> } }) => $.session.end({ reason: 'exit', sessionId: 's1' } as never)
 const submit = ($: { prompt: { submit: (a: never) => Promise<unknown> } }, text: string) => $.prompt.submit({ text, wait: false, origin: { kind: 'composer' } } as never)
 
@@ -170,8 +175,6 @@ function heldFolder(on: On, value?: string) {
 // shell's folder as its cwd (live, 2026-10-10); /cd or a worktree move changes the project root.
 describe('the folder the session started in', () => {
   const OTHER = '/Users/u/Repository/other-project'
-  // session.start in a folder: a new session's own, or a reload's, which has the shell's.
-  const startIn = ($: { session: { start: (a: never) => Promise<unknown> } }, cwd: string) => $.session.start({ cwd, surface: null, isInteractive: true } as never)
   test("after a hot reload the note stays the start folder's, though the reload's session.start has the shell's folder", async ($, on) => {
     const held = heldFolder(on, CWD)
     const { files } = setup(on, { shellCwd: `${CWD}/scripts`, root: OTHER })
@@ -230,6 +233,61 @@ describe('the folder the session started in', () => {
     held.value = undefined
     await $.tool.call({ tool: 'Bash', command: 'cd scripts' } as never)
     expect(before).toBe(CWD)
+  })
+})
+
+// What the mod writes to its state, which the host keeps (the test kit, beneath this hook).
+function stateWrites(on: On) {
+  const writes: { key: string; value: unknown }[] = []
+  on('state.set', ($, e, next) => {
+    const w = e as { plugin: string; key: string; value: unknown }
+    if (w.plugin === 'handoff') writes.push({ key: w.key, value: w.value })
+    return next(e)
+  })
+  return writes
+}
+
+// Backlog #148: a hot reload's session.start (the folder already kept) goes on with the session.
+describe('a hot reload is not a session start', () => {
+  const OLD = '# Handoff · my-project · 2026-10-06 09:00 · full\n\n## Done\n\nOld work.\n'
+  test('after /handoff, a reload gives Claude no note as context and leaves the Write button and the note alone', async ($, on) => {
+    const writes = stateWrites(on)
+    const invalidated: string[] = []
+    on('ui.invalidate', ($, e) => {
+      invalidated.push(e.event)
+      return { value: undefined } as never
+    })
+    const { files } = setup(on)
+    await start($)
+    await $.command.run(run(''))
+    expect(files[NOTE]).toContain('Fixed login.')
+    await submit($, 'Now the tests')
+    writes.length = 0
+    invalidated.length = 0
+    await startIn($, `${CWD}/scripts`)
+    expect(writes.filter(w => w.key === 'worked' || w.key === 'note')).toEqual([])
+    expect(invalidated).toEqual([])
+    expect(((await $.prompt.context({ blocks: [] } as never)) as { blocks: unknown[] }).blocks).toEqual([])
+  })
+  test('a reload keeps the note the session started with as its context, not the one /handoff wrote', async ($, on) => {
+    setup(on, { files: { [NOTE]: OLD } })
+    await start($)
+    await $.command.run(run(''))
+    await startIn($, `${CWD}/scripts`)
+    const ctx = (await $.prompt.context({ blocks: [] } as never)) as { blocks: { name: string; text: string }[] }
+    expect(ctx.blocks.map(b => b.text)).toEqual([`Handoff note from the previous session in this folder (full, 2026-10-06 09:00, yesterday):\n\n${OLD}`])
+  })
+  test('a reload still registers /handoff', async ($, on) => {
+    const { ui } = setup(on)
+    await start($)
+    await startIn($, `${CWD}/scripts`)
+    expect(ui.commands).toEqual(['handoff', 'handoff'])
+  })
+  test('a new session in the folder gets the note the last one wrote as context', async ($, on) => {
+    setup(on, { files: { [NOTE]: `# Handoff · my-project · 2026-10-07 21:40 · full\n\n${BODY}\n` } })
+    await start($)
+    const ctx = (await $.prompt.context({ blocks: [] } as never)) as { blocks: { name: string; text: string }[] }
+    expect(ctx.blocks[0]!.text).toContain('Handoff note from the previous session in this folder (full, 2026-10-07 21:40, today):\n\n# Handoff · my-project')
   })
 })
 

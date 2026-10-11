@@ -298,18 +298,21 @@ export const register: Register = on => {
   // the same core, so no step replaces another's. The core stays modbar's: no blocks, no press taken.
   on('engine.create', async ($, e, next) => ({ modbar: { blocks: async () => [], press: async () => false }, ...(await next(e)) }) as never)
 
-  // Also fired by a hot reload, with the shell's folder: a folder already kept means this session
-  // goes on, and its note's folder with it.
+  // Also fired by a hot reload, with the shell's folder. A folder already kept means this session
+  // goes on: its note's folder, the Write button and the note Claude was given stay as they are.
   on('session.start', async ($, e, next) => {
-    reset((await read($, startFolder).catch(() => '')) || e.cwd)
+    const held = await read($, startFolder).catch(() => '')
+    const isNew = held === ''
+    reset(isNew ? e.cwd : held)
     await keep($)
-    await update($, worked, () => false)
+    if (isNew) await update($, worked, () => false)
     interactive = e.isInteractive !== false
     await $.command.register({ name: 'handoff', description: 'Write a handoff note for the next session here: /handoff [show|clear|auto [on|off]]' })
     const ran = await next(e)
     // The note is for Claude (context); its steps are Claude's, not something for the user to send,
-    // so none is suggested in the prompt box (the user, 2026-10-08).
-    await load($)
+    // so none is suggested in the prompt box (the user, 2026-10-08). After a reload the note on disk
+    // may be this session's own (/handoff), not the previous one's.
+    if (isNew) await load($)
     return ran
   })
 
