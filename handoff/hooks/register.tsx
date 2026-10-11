@@ -8,6 +8,10 @@ export const note = atom({ plugin: 'handoff', key: 'note' } as const, null as No
 export const worked = atom({ plugin: 'handoff', key: 'worked' } as const, false)
 // A note is being written from the button.
 export const writing = atom({ plugin: 'handoff', key: 'writing' } as const, false)
+// The folder the session started in, which names its note. Held by the host for the session, so it
+// outlives a hot reload, whose session.start gives the shell's folder (live, 2026-10-10); /cd and
+// a worktree move change the project root. A new session starts with it empty.
+export const startFolder = atom({ plugin: 'handoff', key: 'folder' } as const, '')
 
 async function markWork($: EngineInterface) {
   dirty = true
@@ -48,11 +52,24 @@ function reset(folder: string) {
   todos = []
 }
 
-// After a hot reload the module has no folder: take the project root, which a shell `cd` doesn't
-// move (the shell's folder named a note after a subfolder, 2026-10-08).
+// After a hot reload the module has no folder: take the one kept for the session, else the project
+// root, which a shell `cd` doesn't move (the shell's folder named a note after a subfolder, 2026-10-08).
 async function folder($: EngineInterface): Promise<string> {
-  if (cwd === '') cwd = await $.session.root()
+  if (cwd === '') cwd = (await read($, startFolder).catch(() => '')) || (await $.session.root())
   return cwd
+}
+
+// Puts the folder in the session's state when it holds none. /clear empties that state (live,
+// 2026-10-10), so it is kept again once the new conversation starts, and at each prompt and before
+// each Bash command (the shell may cd) in case that came too early.
+async function keep($: EngineInterface) {
+  try {
+    if ((await read($, startFolder)) !== '') return
+    const dir = await folder($)
+    await update($, startFolder, () => dir)
+  } catch {
+    // Not kept: a reload goes by its session.start's folder, as before.
+  }
 }
 
 async function notePath($: EngineInterface): Promise<{ path: string; shown: string; legacy: string }> {
@@ -160,6 +177,7 @@ async function repos($: EngineInterface, dirs: string[]): Promise<GitState[]> {
 // a change; with no repo in view there's no telling, so it does. A refused command never ran, and
 // one that failed counts only for the files git shows it changed.
 async function trackBash($: EngineInterface, e: unknown, next: (e: never) => Promise<ToolResult>) {
+  await keep($)
   // Before the command, only folders git hasn't been asked about yet: the others have their base.
   for (const st of await repos($, (await watched($)).filter(d => !seen.has(d)))) if (!bases.has(st.top)) bases.set(st.top, st)
   const r = await next(e as never)
@@ -280,8 +298,11 @@ export const register: Register = on => {
   // the same core, so no step replaces another's. The core stays modbar's: no blocks, no press taken.
   on('engine.create', async ($, e, next) => ({ modbar: { blocks: async () => [], press: async () => false }, ...(await next(e)) }) as never)
 
+  // Also fired by a hot reload, with the shell's folder: a folder already kept means this session
+  // goes on, and its note's folder with it.
   on('session.start', async ($, e, next) => {
-    reset(e.cwd)
+    reset((await read($, startFolder).catch(() => '')) || e.cwd)
+    await keep($)
     await update($, worked, () => false)
     interactive = e.isInteractive !== false
     await $.command.register({ name: 'handoff', description: 'Write a handoff note for the next session here: /handoff [show|clear|auto [on|off]]' })
@@ -293,6 +314,7 @@ export const register: Register = on => {
   })
 
   on('prompt.submit', async ($, e, next) => {
+    await keep($)
     const kind = (e as { origin?: { kind?: string } }).origin?.kind
     const text = (e as { text?: string }).text ?? ''
     if ((kind === 'composer' || kind === 'bridge') && !text.trimStart().startsWith('/')) await markWork($)
@@ -358,9 +380,15 @@ export const register: Register = on => {
       }
     }
     // A /clear goes on in this process without a session.start: start the tracking over and
-    // give the next conversation the note as it now stands.
+    // give the next conversation the note as it now stands. That conversation's state starts empty
+    // once this hook is done: the timer keeps the folder in it.
     reset(cwd)
     await load($).catch(() => undefined)
+    try {
+      $.clock.after(0, () => void keep($))
+    } catch {
+      // Kept at the next prompt or Bash command instead.
+    }
     return next(e)
   })
 

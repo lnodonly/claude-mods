@@ -6,6 +6,8 @@ declare module 'claude-code' {
       note: Note | null
       worked: boolean
       writing: boolean
+      // The folder the session started in, kept across hot reloads; '' until kept.
+      folder: string
     }
   }
 }

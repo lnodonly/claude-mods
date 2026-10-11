@@ -7,7 +7,7 @@ const NOTE = `${HOME}/.claude/handoffs/-Users-u-Repository-my-project-0af20ff9.m
 const AT = new Date(2026, 9, 7, 21, 40).getTime()
 const BODY = '## Done\n\nFixed login.\n\n## Where things stand\n\nOK.\n\n## Next steps\n\n- [ ] Check the staging site\n- [ ] Run the linter\n\n## Open questions\n\nNone.\n\n## Gotchas\n\nNone.'
 
-type Opts = { files?: Record<string, string>; store?: Record<string, unknown>; storeThrows?: boolean; fork?: { isAnswered: boolean; text?: string; reason?: string }; writeFails?: boolean; scrub?: (t: string) => string; shellCwd?: string; git?: Git; bash?: 'deny' | 'error'; list?: Entry[] }
+type Opts = { files?: Record<string, string>; store?: Record<string, unknown>; storeThrows?: boolean; fork?: { isAnswered: boolean; text?: string; reason?: string }; writeFails?: boolean; scrub?: (t: string) => string; shellCwd?: string; root?: string; git?: Git; bash?: 'deny' | 'error'; list?: Entry[] }
 type Entry = { name: string; kind: 'file' | 'dir' | 'other' }
 type GitState = { head: string; status: string[]; diff?: string[] }
 type Git = { top: string; before: GitState; after: GitState }
@@ -17,7 +17,7 @@ function setup(on: On, opts: Opts = {}) {
   const files: Record<string, string> = { ...(opts.files ?? {}) }
   const ui = { writes: [] as string[], suggested: [] as string[], gitDirs: [] as string[] }
   mock.env(on, { HOME })
-  mock.clock(on, { now: AT })
+  const clock = mock.clock(on, { now: AT })
   on('fs.exists', ($, e) => ({ value: e.path in files }))
   // The project folder's entries; any other folder is empty.
   on('fs.list', ($, e) => ({ value: (e.path === CWD ? (opts.list ?? []) : []).map(x => ({ ...x, size: 0, mtimeMs: 0, isLink: x.kind === 'other' })) }) as never)
@@ -42,7 +42,7 @@ function setup(on: On, opts: Opts = {}) {
   on('session.start', ($, e) => ({ cwd: e.cwd }) as never)
   on('session.end', () => ({ sessionId: 's1' }) as never)
   on('session.cwd', () => ({ value: opts.shellCwd ?? CWD }) as never)
-  on('session.root', () => ({ value: CWD }) as never)
+  on('session.root', () => ({ value: opts.root ?? CWD }) as never)
   on('model.fork', () => ({ value: opts.fork ?? { isAnswered: true, text: BODY } }) as never)
   on('prompt.suggest', ($, e) => {
     ui.suggested.push(e.text)
@@ -88,7 +88,7 @@ function setup(on: On, opts: Opts = {}) {
   on('tool.call', { tool: 'TaskCreate' }, ($, e) => ({ result: { task: { id: `t-${e.subject}`, subject: e.subject } } }) as never)
   on('tool.call', { tool: 'TaskUpdate' }, () => ({ result: { success: true } }) as never)
   on('tool.call', { tool: 'TodoWrite' }, () => ({ result: { oldTodos: [], newTodos: [] } }) as never)
-  return { files, ui, store, unbind: () => { bound = false } }
+  return { files, ui, store, clock, unbind: () => { bound = false } }
 }
 
 const run = (args: string) => ({ command: 'handoff', args, origin: { kind: 'composer' as const }, presentation: { isFullscreen: false, columns: 100 } })
@@ -146,6 +146,90 @@ describe('/handoff', () => {
     await $.command.run(run(''))
     expect(files[NOTE]).toBe(`# Handoff · my-project · 2026-10-07 21:40 · full\n\n${BODY}\n`)
     expect((await $.command.run(run('show'))).text).toBe(files[NOTE])
+  })
+})
+
+// The host's $.state for the folder the session started in, as a test stands in for it: it
+// outlives a hot reload of the module (each test's module is a fresh load), and /clear empties it.
+function heldFolder(on: On, value?: string) {
+  const held = { value, version: value === undefined ? 0 : 1 }
+  const mine = (e: { plugin: string; key: string }) => e.plugin === 'handoff' && e.key === 'folder'
+  on('state.get', ($, e, next) => (mine(e) ? ({ value: { value: held.value, version: held.version } } as never) : next(e)))
+  on('state.set', ($, e, next) => {
+    if (!mine(e)) return next(e)
+    const w = e as { value: unknown; ifVersion?: number }
+    if (w.ifVersion !== undefined && w.ifVersion !== held.version) return { value: { isSet: false, version: held.version } } as never
+    held.value = w.value as string
+    held.version++
+    return { value: { isSet: true, version: held.version } } as never
+  })
+  return held
+}
+
+// Backlog #147: a hot reload starts module memory over and fires session.start again, with the
+// shell's folder as its cwd (live, 2026-10-10); /cd or a worktree move changes the project root.
+describe('the folder the session started in', () => {
+  const OTHER = '/Users/u/Repository/other-project'
+  // session.start in a folder: a new session's own, or a reload's, which has the shell's.
+  const startIn = ($: { session: { start: (a: never) => Promise<unknown> } }, cwd: string) => $.session.start({ cwd, surface: null, isInteractive: true } as never)
+  test("after a hot reload the note stays the start folder's, though the reload's session.start has the shell's folder", async ($, on) => {
+    const held = heldFolder(on, CWD)
+    const { files } = setup(on, { shellCwd: `${CWD}/scripts`, root: OTHER })
+    await startIn($, `${CWD}/scripts`)
+    const out = (await $.command.run(run(''))).text!
+    expect(out).toMatch(/^Handoff saved to ~\/\.claude\/handoffs\/-Users-u-Repository-my-project-0af20ff9\.md\./)
+    expect(files[NOTE]).toMatch(/^# Handoff · my-project · /)
+    expect(held.value).toBe(CWD)
+  })
+  test('after a hot reload with no session.start, the kept folder wins over a project root /cd moved', async ($, on) => {
+    heldFolder(on, CWD)
+    const { files } = setup(on, { root: OTHER })
+    await $.command.run(run(''))
+    expect(files[NOTE]).toMatch(/^# Handoff · my-project · /)
+  })
+  test('a new session starts with its own folder and keeps it for the session', async ($, on) => {
+    const held = heldFolder(on)
+    const { ui } = setup(on, { shellCwd: OTHER, root: OTHER })
+    await startIn($, OTHER)
+    expect(held.value).toBe(OTHER)
+    await $.command.run(run(''))
+    expect(ui.writes).toEqual([expect.stringMatching(/^\/Users\/u\/\.claude\/handoffs\/-Users-u-Repository-other-project-[0-9a-f]{8}\.md$/)])
+  })
+  test("/clear empties the state: the folder is kept in the next conversation's, so a reload after it stays put", async ($, on) => {
+    const held = heldFolder(on)
+    const { files, clock } = setup(on, { shellCwd: `${CWD}/scripts` })
+    await start($)
+    await $.session.end({ reason: 'clear', sessionId: 's1' } as never)
+    // The host starts the next conversation with empty state once session.end is done.
+    held.value = undefined
+    await clock.advance(0)
+    expect(held.value).toBe(CWD)
+    await startIn($, `${CWD}/scripts`)
+    await $.command.run(run(''))
+    expect(files[NOTE]).toMatch(/^# Handoff · my-project · /)
+  })
+  test('a prompt keeps the folder when the state has none', async ($, on) => {
+    const held = heldFolder(on)
+    setup(on)
+    await start($)
+    await $.session.end({ reason: 'clear', sessionId: 's1' } as never)
+    held.value = undefined
+    await submit($, 'Next task')
+    expect(held.value).toBe(CWD)
+  })
+  test('a Bash command keeps the folder before it runs (it may cd) when the state has none', async ($, on) => {
+    const held = heldFolder(on)
+    let before: string | undefined
+    on('tool.call', { tool: 'Bash' }, ($, e, next) => {
+      before = held.value
+      return next(e)
+    })
+    setup(on)
+    await start($)
+    await $.session.end({ reason: 'clear', sessionId: 's1' } as never)
+    held.value = undefined
+    await $.tool.call({ tool: 'Bash', command: 'cd scripts' } as never)
+    expect(before).toBe(CWD)
   })
 })
 
