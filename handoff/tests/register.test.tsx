@@ -61,6 +61,12 @@ function setup(on: On, opts: Opts = {}) {
   let bound = true
   // Unbound, the call goes on to the engine beneath, which (with no transcript) throws, as live.
   on('session.messages', ($, e, next) => (bound ? ({ value: rows } as never) : next(e)))
+  // Rows the session keeps besides typed prompts (a user's `!` command) are in the transcript too.
+  on('session.append', ($, e, next) => {
+    const m = (e as { message: { type: string; content: { text?: string }[] } }).message
+    if (m.type === 'user') rows.push({ role: 'user', text: m.content.map(b => b.text ?? '').join(''), toolUses: [] })
+    return next(e)
+  })
   on('turn.complete', () => ({ text: '' }) as never)
   on('prompt.context', ($, e) => ({ blocks: e.blocks }) as never)
   on('tool.call', { tool: 'Edit' }, () => ({ result: { filePath: 'x', oldString: 'a', newString: 'b' } }) as never)
@@ -91,7 +97,9 @@ function setup(on: On, opts: Opts = {}) {
   on('tool.call', { tool: 'TaskCreate' }, ($, e) => ({ result: { task: { id: `t-${e.subject}`, subject: e.subject } } }) as never)
   on('tool.call', { tool: 'TaskUpdate' }, () => ({ result: { success: true } }) as never)
   on('tool.call', { tool: 'TodoWrite' }, () => ({ result: { oldTodos: [], newTodos: [] } }) as never)
-  return { files, ui, store, clock, unbind: () => { bound = false } }
+  // The user's own `!` command runs: git answers with the after state from here on.
+  const shellRan = () => { ran = true }
+  return { files, ui, store, clock, shellRan, unbind: () => { bound = false } }
 }
 
 const run = (args: string) => ({ command: 'handoff', args, origin: { kind: 'composer' as const }, presentation: { isFullscreen: false, columns: 100 } })
@@ -604,6 +612,70 @@ describe('exit', () => {
     await start($)
     await submit($, 'something')
     expect(await end($)).toEqual({ sessionId: 's1' })
+  })
+})
+
+// A user's own `!` command reaches a mod only as two rows by the command door (live, 2026-10-10):
+// no prompt.submit and no tool call.
+let rowId = 0
+const appendRow = ($: { session: { append: (a: never) => Promise<unknown> } }, door: string, origin: object, type: string, text: string) =>
+  $.session.append({ message: { type, content: [{ type: 'text', text }] }, door, origin, uuid: `row-${++rowId}` } as never)
+const bang = async ($: { session: { append: (a: never) => Promise<unknown> } }, command: string) => {
+  await appendRow($, 'command', { kind: 'unclassified' }, 'user', `<bash-input>${command}</bash-input>`)
+  await appendRow($, 'command', { kind: 'unclassified' }, 'user', '<bash-stdout></bash-stdout><bash-stderr></bash-stderr>')
+}
+
+// Backlog #149.
+describe("the user's own ! commands", () => {
+  const prev = '# Handoff · my-project · 2026-10-06 09:00 · full\n\n## Done\n\nFixed login.\n'
+  test('a ! command is work: with nothing else, exit writes an automatic note over an existing one', async ($, on) => {
+    const { files } = setup(on, { files: { [NOTE]: prev } })
+    await start($)
+    await bang($, 'touch x')
+    await end($)
+    expect(files[NOTE]).toMatch(/^# Handoff · my-project · 2026-10-07 21:40 · auto\n/)
+  })
+  test('in a repo that already has a base, the files git shows a ! command changed are listed', async ($, on) => {
+    const git: Git = { top: CWD, before: { head: 'aaa', status: [] }, after: { head: 'aaa', status: [' M notes.md'] } }
+    // Claude's Bash command is refused, after git's base was taken for it.
+    const { files, shellRan } = setup(on, { git, bash: 'deny' })
+    await start($)
+    await $.tool.call({ tool: 'Bash', command: 'ls' } as never)
+    shellRan()
+    await bang($, 'echo hi >> notes.md')
+    await end($)
+    expect(files[NOTE]).toContain('## Files changed\n\n- notes.md\n\n')
+  })
+  test('a repo with no base gets none from a ! command: git is not asked, nothing is listed', async ($, on) => {
+    const git: Git = { top: CWD, before: { head: 'aaa', status: [] }, after: { head: 'aaa', status: [' M notes.md'] } }
+    const { files, ui, shellRan } = setup(on, { git })
+    await start($)
+    shellRan()
+    await bang($, 'echo hi >> notes.md')
+    await end($)
+    expect(ui.gitDirs).toEqual([])
+    expect(files[NOTE]).toContain('## Files changed\n\nNone.\n\n')
+  })
+  test('<bash-input> in a typed prompt, in Claude\'s answer or in an engine row is not a ! command, nor is a slash command', async ($, on) => {
+    const { files, ui } = setup(on, { files: { [NOTE]: prev } })
+    await start($)
+    await appendRow($, 'prompt', { kind: 'composer' }, 'user', '<bash-input>rm x</bash-input>')
+    await appendRow($, 'command', { kind: 'unclassified' }, 'user', '<command-name>/handoff</command-name>')
+    // By the command door, but the engine's, or not a user row.
+    await appendRow($, 'command', { kind: 'engine' }, 'user', '<bash-input>rm x</bash-input>')
+    await appendRow($, 'command', { kind: 'unclassified' }, 'system', '<bash-input>rm x</bash-input>')
+    await appendRow($, 'response', { kind: 'model', model: 'm' }, 'assistant', '<bash-input>rm x</bash-input>')
+    await end($)
+    expect(ui.writes).toEqual([])
+    expect(files[NOTE]).toBe(prev)
+  })
+  test('a ! command is never the last request', async ($, on) => {
+    const { files } = setup(on)
+    await start($)
+    await submit($, 'Tidy the exports')
+    await bang($, 'rm exports/old.csv')
+    await end($)
+    expect(files[NOTE]).toContain('## Last request\n\n> Tidy the exports\n')
   })
 })
 

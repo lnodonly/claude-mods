@@ -170,6 +170,16 @@ async function repos($: EngineInterface, dirs: string[]): Promise<GitState[]> {
   return out
 }
 
+// What git shows changed in a repo since its base: files newly dirty, and files in commits since.
+async function changedSince($: EngineInterface, base: GitState, now: GitState): Promise<string[]> {
+  const found = [...now.dirty].filter(f => !base.dirty.has(f))
+  if (base.head !== '' && now.head !== base.head) {
+    const diff = await git($, base.top, ['diff', '--name-only', '-z', base.head, now.head])
+    found.push(...(diff ?? '').split('\0').filter(f => f !== ''))
+  }
+  return found
+}
+
 // Bash edits files the Edit tracker never sees: list what git shows changed since the first
 // Bash command in each repo, newly dirty or committed. Files already dirty then aren't counted, and
 // a repo first entered by a command (cd and edit in one) starts counting after it.
@@ -191,16 +201,49 @@ async function trackBash($: EngineInterface, e: unknown, next: (e: never) => Pro
       bases.set(now.top, now)
       continue
     }
-    const found = [...now.dirty].filter(f => !base.dirty.has(f))
-    if (base.head !== '' && now.head !== base.head) {
-      const diff = await git($, base.top, ['diff', '--name-only', '-z', base.head, now.head])
-      found.push(...(diff ?? '').split('\0').filter(f => f !== ''))
-    }
+    const found = await changedSince($, base, now)
     for (const f of found) files.add(relativeTo(root, `${now.top}/${f}`))
     if (found.length > 0) touched = true
   }
   if (touched) changed = true
   if (touched || ok(r)) await markWork($)
+  return r
+}
+
+// A user's own `!` command reaches a mod only as rows the session keeps by the command door, the
+// user's `<bash-input>` and then its `<bash-stdout>`: no prompt, no tool call (live, 2026-10-10).
+// A typed prompt and Claude's answers come by other doors; a slash command's rows by this one hold
+// other text.
+type Row = { door: string; origin: { kind: string }; agentId?: string; message: { type: string; content: { type: string; text?: string }[] } }
+function shellRow(e: Row): 'input' | 'output' | undefined {
+  if (e.door !== 'command' || e.message.type !== 'user' || e.agentId !== undefined) return undefined
+  if (!['unclassified', 'composer', 'bridge'].includes(e.origin.kind)) return undefined
+  const text = e.message.content.map(b => (b.type === 'text' ? (b.text ?? '') : '')).join('').trimStart()
+  if (text.startsWith('<bash-input>')) return 'input'
+  return text.startsWith('<bash-stdout>') || text.startsWith('<bash-stderr>') ? 'output' : undefined
+}
+
+// There's no telling what a `!` command did, as with a Bash command with no repo in view, so it
+// counts as a change. Repos that already have a base list what git shows changed once it has run;
+// none gets a new base here.
+async function trackShell($: EngineInterface, e: Row, next: (e: never) => Promise<unknown>) {
+  const r = await next(e as never)
+  try {
+    const row = shellRow(e)
+    if (row === 'input') {
+      changed = true
+      await markWork($)
+    } else if (row === 'output' && bases.size > 0) {
+      const root = await folder($)
+      const known = [...bases.values()]
+      const now = await Promise.all(known.map(b => gitState($, b.top)))
+      for (const [i, st] of now.entries()) {
+        if (st !== null) for (const f of await changedSince($, known[i]!, st)) files.add(relativeTo(root, `${st.top}/${f}`))
+      }
+    }
+  } catch {
+    // Never in the way of the row.
+  }
   return r
 }
 
@@ -338,6 +381,7 @@ export const register: Register = on => {
   on('tool.call', { tool: 'Write' }, trackEdit as never)
   on('tool.call', { tool: 'NotebookEdit' }, trackEdit as never)
   on('tool.call', { tool: 'Bash' }, trackBash as never)
+  on('session.append', { door: 'command' }, trackShell as never)
   on('tool.call', { tool: 'TaskCreate' }, trackTaskCreate as never)
   on('tool.call', { tool: 'TaskUpdate' }, trackTaskUpdate as never)
   on('tool.call', { tool: 'TodoWrite' }, trackTodo as never)
