@@ -1,0 +1,7 @@
+{
+  "name": "rules-enforcer",
+  "version": "0.1.0",
+  "description": "Enforces a project's .claude/rules.json: required skills before edits, and doc updates in the same turn",
+  "author": { "name": "Lauren Nodonly" },
+  "types": "./types/index.d.ts"
+}

@@ -3,7 +3,7 @@
   "owner": {
     "name": "Lauren Nodonly"
   },
-  "description": "Mods for Claude Code: a configurable area above the prompt, a context bar, lossless output cleanup and session handoff notes",
+  "description": "Mods for Claude Code: a configurable area above the prompt, a context bar, lossless output cleanup, session handoff notes, and per-project rule enforcement",
   "plugins": [
     {
       "name": "modbar",
@@ -24,6 +24,11 @@
       "name": "handoff",
       "source": "./handoff",
       "description": "A note per project folder for the next session: /handoff writes a full one; exit can save a quick one (/handoff auto on)"
+    },
+    {
+      "name": "rules-enforcer",
+      "source": "./rules-enforcer",
+      "description": "Enforces a project's .claude/rules.json: required skills before edits, and doc updates in the same turn"
     }
   ]
 }
